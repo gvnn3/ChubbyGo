@@ -13,37 +13,37 @@
  * limitations under the License.
  */
 
-/* Code comment are all encoded in UTF-8.*/
+/* Code comments are all encoded in UTF-8.*/
 
 package Config
 
 import (
 	"ChubbyGo/Connect"
 	"encoding/json"
-	io "io/ioutil"
 	"log"
+	"os"
 	"sync"
 )
 
-var Server_file_locker sync.Mutex //config file locker
+var Server_file_locker sync.Mutex // config file locker
 
-func init(){
+func init() {
 	Connect.RegisterRestServerListener(LoadServerConfig)
 }
 
 func LoadServerConfig(filename string, cfg *Connect.ServerConfig) bool {
 
 	Server_file_locker.Lock()
-	data, err := io.ReadFile(filename) //read config file
+	data, err := os.ReadFile(filename) // read config file
 	Server_file_locker.Unlock()
 	if err != nil {
-		log.Printf("read json file error,%s\n", err.Error())
+		log.Printf("read json file error, %s\n", err.Error())
 		return false
 	}
-	// Unmarshal对于结构体偏向于精确匹配，也接收不精确匹配
+	// Unmarshal prefers exact matches for structures, but also accepts inexact matches
 	err = json.Unmarshal(data, &cfg)
-	// 太扯了 不加双引号解不出数组
-	// fmt.Printf("DEBUG : data %s : %s : %s : %s\n",data, cfg.SnapshotFileName, cfg.RaftstateFileName,cfg.PersistenceStrategy)
+	// It's ridiculous that it can't parse arrays without double quotes
+	// fmt.Printf("DEBUG : data %s : %s : %s : %s\n", data, cfg.SnapshotFileName, cfg.RaftstateFileName, cfg.PersistenceStrategy)
 	if err != nil {
 		log.Println("unmarshal json file error")
 		return false

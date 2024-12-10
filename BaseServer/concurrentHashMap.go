@@ -13,49 +13,48 @@
  * limitations under the License.
  */
 
-/* Code comment are all encoded in UTF-8.*/
+/* Code comments are all encoded in UTF-8.*/
 
 /*
- * 这个代码的原型来自于: https://github.com/halfrost/Halfrost-Field/blob/master/contents/Go/go_map_bench_test/concurrent-map/concurrent_map.go
- * 我修改了其中的哈希算法;
+ * The prototype of this code comes from: https://github.com/halfrost/Halfrost-Field/blob/master/contents/Go/go_map_bench_test/concurrent-map/concurrent_map.go
+ * I modified the hash algorithm;
  */
 
 package BaseServer
 
 import (
 	"encoding/json"
-	"github.com/xxhash"
 	"sync"
 	"unsafe"
+
+	"github.com/xxhash"
 )
 
 /*
- * @notes: 重写一遍是为了防止环状引用
+ * @notes: Rewriting it to prevent circular references
  */
 func str2sbyte(s string) (b []byte) {
-	*(*string)(unsafe.Pointer(&b)) = s                                                  // 把s的地址付给b
-	*(*int)(unsafe.Pointer(uintptr(unsafe.Pointer(&b)) + 2*unsafe.Sizeof(&b))) = len(s) // 修改容量为长度
+	*(*string)(unsafe.Pointer(&b)) = s                                                  // Assign the address of s to b
+	*(*int)(unsafe.Pointer(uintptr(unsafe.Pointer(&b)) + 2*unsafe.Sizeof(&b))) = len(s) // Set the capacity to the length
 	return
 }
 
-// TODO 桶的数量应该可以自己配置,因为xxhash的性能很优秀,所以越大的数据越适合更多的桶
+// TODO The number of buckets should be configurable. Because the performance of xxhash is excellent, more buckets are suitable for larger data.
 var SHARD_COUNT = 32
-
 
 type ConcurrentHashMap struct {
 	ThreadSafeHashMap []*ConcurrentMapShared
-	NowKeyNumber uint64
-	BucketNumber uint32
+	NowKeyNumber      uint64
+	BucketNumber      uint32
 }
 
-
 type ConcurrentMapShared struct {
-	items        map[string]interface{}
+	items map[string]interface{}
 	sync.RWMutex
 }
 
 /*
- * @brief: 创建一个新的map
+ * @brief: Create a new map
  */
 func NewConcurrentMap() *ConcurrentHashMap {
 	Map := ConcurrentHashMap{}
@@ -70,7 +69,7 @@ func NewConcurrentMap() *ConcurrentHashMap {
 }
 
 /*
- * @brief: 利用key得到哈希表内的桶
+ * @brief: Use the key to get the bucket in the hash table
  */
 func (m ConcurrentHashMap) GetShard(key string) *ConcurrentMapShared {
 	return m.ThreadSafeHashMap[uint(xxhash_key(key))%uint(m.BucketNumber)]
@@ -98,8 +97,6 @@ func (m ConcurrentHashMap) Set(key string, value interface{}) {
 // It is called while lock is held, therefore it MUST NOT
 // try to access other keys in same map, as it can lead to deadlock since
 // Go sync.RWLock is not reentrant
-// 回调返回待插入到 map 中的新元素
-// 这个函数当且仅当在读写锁被锁定的时候才会被调用，因此一定不允许再去尝试读取同一个 map 中的其他 key 值。因为这样会导致线程死锁。死锁的原因是 Go 中 sync.RWLock 是不可重入的。
 type UpsertCb func(exist bool, valueInMap interface{}, newValue interface{}) interface{}
 
 // Insert or Update - updates existing element or inserts a new one using UpsertCb
@@ -138,7 +135,6 @@ func (m ConcurrentHashMap) Get(key string) (interface{}, bool) {
 }
 
 // Returns the number of elements within the map.
-// 返回目前map中的数据总量
 func (m ConcurrentHashMap) Count() uint64 {
 	return m.NowKeyNumber
 }
@@ -187,7 +183,7 @@ type Tuple struct {
 
 // Returns an iterator which could be used in a for range loop.
 //
-// Deprecated: using IterBuffered() will get a better performence
+// Deprecated: using IterBuffered() will get a better performance
 func (m ConcurrentHashMap) Iter() <-chan Tuple {
 	chans := snapshot(m)
 	ch := make(chan Tuple)
@@ -196,7 +192,6 @@ func (m ConcurrentHashMap) Iter() <-chan Tuple {
 }
 
 // Returns a buffered iterator which could be used in a for range loop.
-// 相当于所有的值都缓存在channel中
 func (m ConcurrentHashMap) IterBuffered() <-chan Tuple {
 	chans := snapshot(m)
 	total := 0
@@ -208,11 +203,10 @@ func (m ConcurrentHashMap) IterBuffered() <-chan Tuple {
 	return ch
 }
 
-// Returns a array of channels that contains elements in each shard,
+// Returns an array of channels that contains elements in each shard,
 // which likely takes a snapshot of `m`.
 // It returns once the size of each buffered channel is determined,
 // before all the channels are populated using goroutines.
-// 返回值是SHARD_COUNT个缓冲channel
 func snapshot(m ConcurrentHashMap) (chans []chan Tuple) {
 	chans = make([]chan Tuple, SHARD_COUNT)
 	wg := sync.WaitGroup{}
@@ -263,15 +257,14 @@ func (m ConcurrentHashMap) Items() map[string]interface{} {
 	return tmp
 }
 
-// Iterator callback,called for every key,value found in
+// Iterator callback, called for every key, value found in
 // maps. RLock is held for all calls for a given shard
-// therefore callback sess consistent view of a shard,
+// therefore callback sees consistent view of a shard,
 // but not across the shards
 type IterCb func(key string, v interface{})
 
 // Callback based iterator, cheapest way to read
 // all elements in a map.
-// 传入一个回调函数，目前map中的每个值都会调用这个回调
 func (m ConcurrentHashMap) IterCb(fn IterCb) {
 	for idx := range m.ThreadSafeHashMap {
 		shard := (m.ThreadSafeHashMap)[idx]
@@ -284,17 +277,16 @@ func (m ConcurrentHashMap) IterCb(fn IterCb) {
 }
 
 // Return all keys as []string
-// 这个貌似不对 可能channel会阻塞，因为count结束以后可能会传入值，导致这里channel阻塞
 func (m ConcurrentHashMap) Keys() []string {
 	count := m.Count()
 	ch := make(chan string, count)
 	go func() {
-		// 遍历所有的 shard.
+		// Traverse all shards.
 		wg := sync.WaitGroup{}
 		wg.Add(SHARD_COUNT)
 		for _, shard := range m.ThreadSafeHashMap {
 			go func(shard *ConcurrentMapShared) {
-				// 遍历所有的 key, value 键值对.
+				// Traverse all key, value pairs.
 				shard.RLock()
 				for key := range shard.items {
 					ch <- key
@@ -307,7 +299,7 @@ func (m ConcurrentHashMap) Keys() []string {
 		close(ch)
 	}()
 
-	// 生成 keys 数组，存储所有的 key
+	// Generate keys array to store all keys
 	keys := make([]string, 0, count)
 	for k := range ch {
 		keys = append(keys, k)
@@ -315,10 +307,9 @@ func (m ConcurrentHashMap) Keys() []string {
 	return keys
 }
 
-//Reviles ConcurrentMap "private" variables to json marshal.
-// 可以用这个持久化
+// Reveals ConcurrentMap "private" variables to json marshal.
 func (m ConcurrentHashMap) MarshalJSON() ([]byte, error) {
-	// Create a temporary map, which will hold all item spread across shards.
+	// Create a temporary map, which will hold all items spread across shards.
 	tmp := make(map[string]interface{})
 
 	// Insert items to temporary map.
@@ -329,7 +320,7 @@ func (m ConcurrentHashMap) MarshalJSON() ([]byte, error) {
 }
 
 /*
- * @param: 性能极其优异的哈希算法
+ * @param: Extremely efficient hash algorithm
  */
 func xxhash_key(key string) uint32 {
 	xxh := xxhash.New32()
@@ -338,14 +329,14 @@ func xxhash_key(key string) uint32 {
 }
 
 /*
- * @brief: 用于与一般ChubbyGoMap作比较
+ * @brief: Used to compare with general ChubbyGoMap
  */
 type BaseMap struct {
 	sync.Mutex
 	m map[string]interface{}
 }
 
-func NewBaseMap() *BaseMap{
+func NewBaseMap() *BaseMap {
 	return &BaseMap{
 		m: make(map[string]interface{}, 100),
 	}

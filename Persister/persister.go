@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-/* Code comment are all encoded in UTF-8.*/
+/* Code comments are all encoded in UTF-8.*/
 
 package Persister
 
@@ -25,22 +25,22 @@ import (
 	"time"
 )
 
-// 模仿redis AOF的命名,其实总体来看更像是RDB
+// Mimicking Redis AOF naming, but overall it looks more like RDB
 const (
-	Always   = iota // 每条操作都进行刷盘,这样看来就不需要守护进程了
-	Everysec        // 每秒进行一次刷盘,把raftstate和snapshot分别存到不同的文件中
-	No              // 不主动刷盘
+	Always   = iota // Every operation is flushed to disk, so no need for a daemon process
+	Everysec        // Flush to disk every second, storing raftstate and snapshot in different files
+	No              // No proactive flushing to disk
 )
 
 type Persister struct {
-	mu        sync.Mutex // 这个锁很重要,因为raft会和守护协程都会操作这个结构体,所以需要加锁保护
+	mu        sync.Mutex // This lock is important because both raft and the daemon goroutine will operate on this struct, so it needs to be protected
 	raftstate []byte
 	snapshot  []byte
 
-	// 持久化文件名取决于用户给予了用户很高的自由度,同时方便了测试
-	SnapshotFileName    string // 快照的持久化文件名
-	RaftstateFileName   string // raft状态的持久化名
-	PersistenceStrategy int    // 对应着三条策略
+	// The persistence file name depends on the user, giving the user a high degree of freedom and facilitating testing
+	SnapshotFileName    string // Snapshot persistence file name
+	RaftstateFileName   string // Raft state persistence file name
+	PersistenceStrategy int    // Corresponds to the three strategies
 }
 
 func MakePersister() *Persister {
@@ -61,7 +61,7 @@ func (ps *Persister) SaveRaftState(state []byte) {
 	defer ps.mu.Unlock()
 	ps.raftstate = state
 
-	// 策略为always时意味着每一个操作都会入盘
+	// Strategy "always" means every operation is flushed to disk
 	if ps.PersistenceStrategy == Always {
 		WriteContentToFile(ps.raftstate, ps.RaftstateFileName, ps.PersistenceStrategy)
 	}
@@ -74,8 +74,8 @@ func (ps *Persister) ReadRaftState() []byte {
 }
 
 /*
- * @brief: 从raftstate.hdb中读取RaftState
- * @return: 返回文件内容的[]byte
+ * @brief: Read RaftState from raftstate.hdb
+ * @return: Returns the file content as []byte
  */
 func (ps *Persister) ReadRaftStateFromFile() []byte {
 	content, err := ReadContentFromFile(ps.RaftstateFileName)
@@ -106,7 +106,7 @@ func (ps *Persister) SaveSnapshot(snapshot []byte) {
 	defer ps.mu.Unlock()
 	ps.snapshot = snapshot
 
-	// 策略为always时意味着每一个操作都会入盘
+	// Strategy "always" means every operation is flushed to disk
 	if ps.PersistenceStrategy == Always {
 		WriteContentToFile(ps.snapshot, ps.SnapshotFileName, ps.PersistenceStrategy)
 	}
@@ -125,7 +125,7 @@ func (ps *Persister) SnapshotSize() int {
 }
 
 /*
- * @brief: 根据SnapshotFileName读取快照文件
+ * @brief: Read the snapshot file based on SnapshotFileName
  */
 func (ps *Persister) ReadSnapshotFromFile() []byte {
 	content, err := ReadContentFromFile(ps.SnapshotFileName)
@@ -136,16 +136,19 @@ func (ps *Persister) ReadSnapshotFromFile() []byte {
 	return content
 }
 
-// 考虑到要把快照和基础配置放在两个文件中,这里不把下面两个函数搞成成员函数,这样可以减少代码重复
+// Considering that the snapshot and basic configuration are placed in two files,
+// the following two functions are not made member functions, which can reduce code duplication
 
 /*
- * @brief: 向文件写入数据
- * @return: 返回错误类型
- * @notes: 暂定给出存盘策略,遵循所选择策略刷入磁盘,一个守护协程负责按照策略刷入磁盘;no和everysec都会进入,everysec会刷盘.
+ * @brief: Write data to a file
+ * @return: Returns an error type
+ * @notes: The current persistence strategy is tentative, following the selected strategy to flush to disk.
+ * A daemon goroutine is responsible for flushing to disk according to the strategy; both "no" and "everysec" will enter, "everysec" will flush to disk.
  */
-// TODO 目前需要json中选择持久化策略和存储的文件名, 记得查一下操作系统对于文件和文件夹的名称限制
-//  需要在raft开始时跑一个守护协程,负责周期刷盘
-//  并在服务器解析出文件名的时候进行读取,把数据传给persist,persist传给Raft
+// TODO Currently need to choose the persistence strategy and storage file name in json,
+// remember to check the operating system's restrictions on file and folder names
+// Need to run a daemon goroutine at the start of raft, responsible for periodic flushing to disk
+// And read the file name when the server parses it, pass the data to persist, and persist pass it to Raft
 func WriteContentToFile(vals []byte, outfile string, strategy int) error {
 	file, err := os.Create(outfile)
 	if err != nil {
@@ -159,15 +162,15 @@ func WriteContentToFile(vals []byte, outfile string, strategy int) error {
 		return errW
 	}
 
-	// TODO close失败时调用方行为怎么做？哪些情况会出现close错误
+	// TODO What to do if close fails? In what situations will close errors occur?
 	errC := file.Close()
 	if errC != nil {
 		log.Println(errC.Error())
 		return errC
 	}
 
-	// 将调用fsync进行刷盘
-	if strategy == Everysec { //|| strategy == Always {	修改为Always时不启动协程
+	// Call fsync to flush to disk
+	if strategy == Everysec { //|| strategy == Always {	Modified to not start goroutine for Always
 		file.Sync()
 	}
 
@@ -175,20 +178,22 @@ func WriteContentToFile(vals []byte, outfile string, strategy int) error {
 }
 
 /*
- * @brief: 从文件中读出数据
- * @return: 返回文件的[]byte和错误类型
- * @notes: 使用这个函数的时候必须先判断err,再使用[]byte,被调用于服务器启动时,先读取两个文件,放到persister,然后传递给Raft,启动时就会自动读取了
+ * @brief: Read data from a file
+ * @return: Returns the file content as []byte and an error type
+ * @notes: When using this function, you must first check err before using []byte.
+ * It is called when the server starts, first reading the two files, putting them into persister,
+ * and then passing them to Raft, which will automatically read them at startup.
  */
 func ReadContentFromFile(filepath string) ([]byte, error) {
 	var NULL []byte
-	//打开文件
+	// Open the file
 	fi, err := os.Open(filepath)
 	if err != nil {
 		log.Println(err.Error())
 		return NULL, err
 	}
 
-	//读取内容
+	// Read the content
 	res, errR := ioutil.ReadAll(fi)
 	if err != nil {
 		log.Println(errR.Error())
@@ -200,27 +205,28 @@ func ReadContentFromFile(filepath string) ([]byte, error) {
 		log.Println(errC.Error())
 		return res, errC
 	}
-	// 没有错误，直接退出
+	// No errors, exit directly
 	return res, nil
 }
 
 /*
- * @brief: 负责按照策略进行持久化,其实这个守护协程值执行everysec策略
+ * @brief: Responsible for persistence according to the strategy,
+ * in fact, this daemon goroutine only executes the everysec strategy
  */
 func PersisterDaemon(per *Persister) {
 	for {
 
-		per.mu.Lock() // 保护per.raftstate
+		per.mu.Lock() // Protect per.raftstate
 
-		// 不仅传一个per是为了这个函数能够复用
+		// Not only passing a per is to make this function reusable
 		errRaftState := WriteContentToFile(per.raftstate, per.RaftstateFileName, per.PersistenceStrategy)
 		per.mu.Unlock()
 
 		if errRaftState != nil {
 			log.Println("WARNING : ", errRaftState.Error())
 		}
-		per.mu.Lock() // 保护per.snapshot
-		// log.Printf("DEBUG : snapshot length == %d\n", len(per.snapshot))	// 检查宕机重启后snapshot文件大小为0
+		per.mu.Lock() // Protect per.snapshot
+		// log.Printf("DEBUG : snapshot length == %d\n", len(per.snapshot))	// Check if snapshot file size is 0 after crash restart
 		errSnapshot := WriteContentToFile(per.snapshot, per.SnapshotFileName, per.PersistenceStrategy)
 		per.mu.Unlock()
 
@@ -228,6 +234,6 @@ func PersisterDaemon(per *Persister) {
 			log.Println("WARNING : ", errRaftState.Error())
 		}
 
-		time.Sleep(1 * time.Second) // 每一秒持久化一次
+		time.Sleep(1 * time.Second) // Persist every second
 	}
 }

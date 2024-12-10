@@ -9,13 +9,12 @@ import (
 	"sync/atomic"
 )
 
-/* 测试ChubbyGo的功能是否ok. */
+/* Test if the functionality of ChubbyGo is working correctly. */
 
 func main() {
 	GoroutinueNumber := 1
-	// 可选的,SyncMap或者ConcurrentMap
+	// Optional, SyncMap or ConcurrentMap
 	entry := BaseServer.NewChubbyGoMap(BaseServer.SyncMap)
-
 
 	wg := sync.WaitGroup{}
 	wg.Add(GoroutinueNumber)
@@ -30,7 +29,7 @@ func main() {
 				} else {
 					res, ok := entry.ChubbyGoMapGet(strconv.Itoa(number))
 					temp := "x " + strconv.Itoa(number) + " " + strconv.Itoa(i-1) + " y"
-					if ok && res != temp{
+					if ok && res != temp {
 						log.Printf("Error : res(%s) expected(%s).\n", res, temp)
 						atomic.AddUint32(&ErrorNumber, 1)
 					}
@@ -42,7 +41,7 @@ func main() {
 
 	wg.Wait()
 
-	if atomic.LoadUint32(&ErrorNumber) == 0{
+	if atomic.LoadUint32(&ErrorNumber) == 0 {
 		fmt.Println("PASS.")
 	} else {
 		fmt.Println("Not Pass.")

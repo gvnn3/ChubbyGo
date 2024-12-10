@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-/* Code comment are all encoded in UTF-8.*/
+/* Code comments are all encoded in UTF-8.*/
 
 package BaseServer
 
@@ -29,8 +29,8 @@ import (
 )
 
 type LatestReply struct {
-	Seq   int      // 最新的序列号
-	Value string // 之所以get不直接从db中取是因为取时的最新值不一定是读时的最新值，我们需要一个严格有序的操作序列
+	Seq   int    // Latest sequence number
+	Value string // The reason why get does not directly fetch from db is that the latest value at the time of fetching may not be the latest value at the time of reading. We need a strictly ordered sequence of operations.
 }
 
 type fileSystemNoticeTableEntry struct {
@@ -44,56 +44,56 @@ type RaftKV struct {
 	rf      *Raft.Raft
 	applyCh chan Raft.ApplyMsg
 
-	maxraftstate int 								// 快照的阈值
-	persist       			*Persister.Persister	// 用于持久化
-	LogIndexNotice     		map[int]chan struct{} 	// 用于服务器与raft层同步信息
+	maxraftstate   int                   // Snapshot threshold
+	persist        *Persister.Persister  // For persistence
+	LogIndexNotice map[int]chan struct{} // For synchronizing information between server and raft layer
 
-	// 需要持久化的信息
-	snapshotIndex int								// 现在日志上哪一个位置以前都已经是快照了，包括这个位置
-	KvDictionary            *ChubbyGoConcurrentMap	// 改为并发map以后性能提升了百分之三十左右
-	ClientSeqCache 			map[int64]*LatestReply	// 用作判断当前请求是否已经执行过
+	// Information that needs to be persisted
+	snapshotIndex  int                    // The position in the log up to which everything has been snapshotted, including this position
+	KvDictionary   *ChubbyGoConcurrentMap // Performance improved by about 30% after changing to concurrent map
+	ClientSeqCache map[int64]*LatestReply // Used to determine if the current request has already been executed
 
-	// 以下两项均作为通知机制;注意,协商以0为无效值,这样可以避免读取时锁的使用,ClientInstanceSeq用作instance和token
-	ClientInstanceSeq		map[uint64]chan uint64	// 用作返回给客户端的InstanceSeq
-	// 仅用于Open操作
-	ClientInstanceCheckSum	map[uint64]chan uint64	// 用作返回给客户端的CheckSum
+	// Both of the following items are used as notification mechanisms; note that 0 is used as an invalid value to avoid using locks when reading. ClientInstanceSeq is used as instance and token.
+	ClientInstanceSeq map[uint64]chan uint64 // Used to return InstanceSeq to the client
+	// Only used for Open operations
+	ClientInstanceCheckSum map[uint64]chan uint64 // Used to return CheckSum to the client
 
-	CASNotice	map[uint64]chan bool				// 用作CAS操作的通知，因为CAS并不是总是成功
+	CASNotice map[uint64]chan bool // Used as a notification for CAS operations, as CAS is not always successful
 
 	shutdownCh chan struct{}
 
-	// 显然这个数的最大值就是1，也就是连接成功的时候，且只有两种情况，即0和1
-	// 不使用bool的原因是Golang的atomic貌似没有像C++一样提供atomic_flag这样保证无锁的bool值
-	// 如果硬用bool加锁的话又慢又不好写，因为raft和kvraft应该是共享这个值的
-	ConnectIsok *int32		// 用于同步各服务器之间的服务的具体启动时间 且raft与kvraft应该使用同一个值
-/*
- * ok是此进程连接上所有其他服务器的时间点，显然后ok的进程与先ok的进程可以立即通信
- * 显然在 p1 刚刚 ok 时对其他服务器进行的选举和心跳行为应该是无效的;所以所有被RPC的函数都应该先判断ConnectIsok才决定是否返回值
- * 但是其实p1的守护进程已经开启了
- * 目前的做法是在每个服务器端设置一个字段称为ConnectIsok
- * 在被远端进行RPC的时候，如果本段的连接还没有完成，就给RPC返回失败
-	p1			p2			p3
-	ok
-				ok
-							ok
-*/
+	// Obviously, the maximum value of this number is 1, which means the connection is successful, and there are only two cases, 0 and 1.
+	// The reason for not using bool is that Golang's atomic does not seem to provide an atomic_flag like C++ to ensure a lock-free bool value.
+	// If you forcefully use bool with a lock, it is slow and difficult to write, because raft and kvraft should share this value.
+	ConnectIsok *int32 // Used to synchronize the specific startup time of services between servers. Raft and kvraft should use the same value.
+	/*
+	   - ok is the time point when this process connects to all other servers. Obviously, the ok process and the first ok process can communicate immediately.
+	   - Obviously, the election and heartbeat behavior performed by p1 on other servers when it just ok should be invalid; so all functions called by RPC should first check ConnectIsok to decide whether to return a value.
+	   - However, the daemon process of p1 has already started.
+	   - The current approach is to set a field called ConnectIsok on each server.
+	   - When being RPCed by a remote end, if the connection of this segment is not yet complete, the RPC returns a failure.
+	     p1			p2			p3
+	     ok
+	     ok
+	     ok
+	*/
 }
 
-// 用于server_handler.go,注册raft服务
-func (kv *RaftKV) GetRaft() *Raft.Raft{
+// Used in server_handler.go to register raft service
+func (kv *RaftKV) GetRaft() *Raft.Raft {
 	return kv.rf
 }
 
-// 显然对于同一个客户端不允许并发执行多个操作,会发生死锁,这是我定义的使用规范
+// Obviously, concurrent execution of multiple operations is not allowed for the same client, it will cause deadlock, this is my defined usage specification
 func (kv *RaftKV) Get(args *GetArgs, reply *GetReply) error {
-	// kvraft的这个也可能被触发，用于客户端连接上三个服务器，但其中一台服务器还没有连接到全部的别的服务器，此时对于这个服务器来说应该拒绝请求
-	// 客户端只需要切换leader就ok了
-	if atomic.LoadInt32(kv.ConnectIsok) == 0{
+	// This may also be triggered by kvraft, used when the client connects to three servers, but one of the servers has not yet connected to all other servers. At this time, this server should reject the request.
+	// The client only needs to switch the leader.
+	if atomic.LoadInt32(kv.ConnectIsok) == 0 {
 		reply.Err = ConnectError
 		return nil
 	}
 
-	// 当前已经不是leader了，自然立马返回
+	// If it is no longer the leader, return immediately
 	if _, isLeader := kv.rf.GetState(); !isLeader {
 		reply.Err = NoLeader
 		return nil
@@ -103,7 +103,7 @@ func (kv *RaftKV) Get(args *GetArgs, reply *GetReply) error {
 
 	Notice := make(chan struct{})
 
-	log.Printf("INFO : ClientId[%d], GET:key(%s)\n", args.ClientID,args.Key)
+	log.Printf("INFO : ClientId[%d], GET:key(%s)\n", args.ClientID, args.Key)
 
 	kv.mu.Lock()
 	if dup, ok := kv.ClientSeqCache[int64(args.ClientID)]; ok {
@@ -116,7 +116,7 @@ func (kv *RaftKV) Get(args *GetArgs, reply *GetReply) error {
 		}
 	}
 
-	// raft本身就有锁,放在临界区内的原因是我们必须要得到index,而start必须在检测clientSeqCache之后,好在Start没有阻塞函数
+	// Raft itself has a lock, the reason for putting it in the critical section is that we must get the index, and start must be after checking clientSeqCache. Fortunately, Start is not a blocking function.
 	index, term, _ := kv.rf.Start(NewOperation)
 
 	kv.LogIndexNotice[index] = Notice
@@ -128,19 +128,19 @@ func (kv *RaftKV) Get(args *GetArgs, reply *GetReply) error {
 	select {
 	case <-Notice:
 		curTerm, isLeader := kv.rf.GetState()
-		// 可能在提交之前重选也可能提交之后重选，所以需要重新发送
+		// It may re-elect before or after submission, so it needs to be resent
 		if !isLeader || term != curTerm {
 			reply.Err = ReElection
 			return nil
 		}
 
-		// 改成ChubbyGoMap以后就不需要加锁mu.lock了;以此提升并发度;
+		// After changing to ChubbyGoMap, there is no need to lock mu.lock; thus improving concurrency;
 		// log.Printf("DEBUG : Now key(%s).\n", args.Key)
 		if value, ok := kv.KvDictionary.ChubbyGoMapGet(args.Key); ok {
 			reply.Value = value
 		} else {
 			reply.Err = ErrNoKey
-			reply.Value = "" // 这样写client.go可以少一个条件语句
+			reply.Value = "" // This way client.go can have one less conditional statement
 		}
 
 	case <-kv.shutdownCh:
@@ -150,8 +150,8 @@ func (kv *RaftKV) Get(args *GetArgs, reply *GetReply) error {
 }
 
 func (kv *RaftKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
-	// 本端还没有与其他服务器连接成功
-	if atomic.LoadInt32(kv.ConnectIsok) == 0{
+	// This end has not yet successfully connected to other servers
+	if atomic.LoadInt32(kv.ConnectIsok) == 0 {
 		reply.Err = ConnectError
 		return nil
 	}
@@ -164,7 +164,7 @@ func (kv *RaftKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	NewOperation := KvOp{Key: args.Key, Value: args.Value, Op: args.Op, ClientID: args.ClientID, Clientseq: args.SeqNo}
 	Notice := make(chan struct{})
 
-	log.Printf("INFO : ClientId[%d], PUTAPPEND:key(%s),value(%s)\n", args.ClientID,args.Key, args.Value)
+	log.Printf("INFO : ClientId[%d], PUTAPPEND:key(%s),value(%s)\n", args.ClientID, args.Key, args.Value)
 
 	kv.mu.Lock()
 	if dup, ok := kv.ClientSeqCache[int64(args.ClientID)]; ok {
@@ -202,7 +202,7 @@ func (kv *RaftKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 }
 
 /*
- * @notes: 调用这个函数必须在kvraft的锁保护范围之内进行
+ * @notes: This function must be called within the lock protection range of kvraft
  */
 func (kv *RaftKV) persisterSnapshot(index int) {
 	w := new(bytes.Buffer)
@@ -210,13 +210,13 @@ func (kv *RaftKV) persisterSnapshot(index int) {
 
 	kv.snapshotIndex = index
 
-	e.Encode(kv.KvDictionary)	// 快照点以前的值已经被存到KvDictionary了
+	e.Encode(kv.KvDictionary) // The values before the snapshot point have been stored in KvDictionary
 	e.Encode(kv.snapshotIndex)
 	e.Encode(kv.ClientSeqCache)
 
 	data := w.Bytes()
 
-	// 这里的落盘操作是在临界区内的，这是不推荐always的理由之一
+	// The disk operation here is within the critical section, which is one of the reasons why always is not recommended
 	kv.persist.SaveSnapshot(data)
 }
 
@@ -227,7 +227,7 @@ func (kv *RaftKV) readSnapshot(data []byte) {
 	r := bytes.NewBuffer(data)
 	d := gob.NewDecoder(r)
 
-	// TODO 这里也需要改
+	// TODO This also needs to be changed
 	kv.KvDictionary = NewChubbyGoMap(SyncMap)
 	kv.ClientSeqCache = make(map[int64]*LatestReply)
 
@@ -264,32 +264,32 @@ func StartKVServerInit(me uint64, persister *Persister.Persister, maxraftstate i
 
 	kv.ClientSeqCache = make(map[int64]*LatestReply)
 
-	var Isok int32 = 0	// 最大只能是1 因为只有在连接成功的时候会加一次
+	var Isok int32 = 0 // Maximum can only be 1 because it will only be incremented once when the connection is successful
 	kv.ConnectIsok = &Isok
 
-	// 开始的时候读取快照,当遇到open文件失效的
+	// Read the snapshot at the beginning, when encountering invalid open files
 	kv.readSnapshot(persister.ReadSnapshotFromFile())
-	// ps：很重要,因为从文件中读取的值只是字段，还没有存在persister中,只有存了以后才可以持久化成功,否则会出现宕机重启后snapshot.hdb为0
-	kv.persisterSnapshot(kv.snapshotIndex)	// 这样写会导致起始snapshot.hdb文件大小为76,不过问题不大,因为必须这样做
+	// ps: Very important, because the values read from the file are only fields, they have not been stored in persister yet. Only after storing can persistence be successful, otherwise, the snapshot.hdb will be 0 after a crash restart.
+	kv.persisterSnapshot(kv.snapshotIndex) // Writing this way will cause the initial snapshot.hdb file size to be 76, but it doesn't matter much because it must be done this way
 
 	//log.Printf("DEBUG : [%d] snapshotIndex(%d), len(%d) .\n",kv.me ,kv.snapshotIndex, len(kv.ClientSeqCache))
 
-	// 不写在这里会写在InitFileOperation会出现环状调用，这里的结构可以后面改一改，耦合太高
+	// If not written here, it will be written in InitFileOperation, causing circular calls. The structure here can be modified later, the coupling is too high.
 	RootFileOperation.pathToFileSystemNodePointer[RootFileOperation.root.nowPath] = RootFileOperation.root
 
 	return kv
 }
 
-func (kv *RaftKV)StartKVServer(servers []*rpc.Client){
+func (kv *RaftKV) StartKVServer(servers []*rpc.Client) {
 
-	atomic.AddInt32(kv.ConnectIsok, 1)	// 到这肯定已经连接上其他的服务器了
+	atomic.AddInt32(kv.ConnectIsok, 1) // By this point, it must have connected to other servers
 
-	// 启动kv的服务
+	// Start kv service
 	kv.rf.MakeRaftServer(servers)
 
 	go kv.acceptFromRaftDaemon()
 }
 
-func (kv *RaftKV) StartRaftServer(address *[]string){
+func (kv *RaftKV) StartRaftServer(address *[]string) {
 	kv.rf = Raft.MakeRaftInit(kv.me, kv.persist, kv.applyCh, kv.ConnectIsok, address)
 }

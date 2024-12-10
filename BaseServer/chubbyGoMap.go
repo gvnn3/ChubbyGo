@@ -24,8 +24,8 @@ import (
 )
 
 /*
- * @brief: ChubbyGoConcurrentMap写成这样的原因是sync.map和concurrentMap各有优劣,用户可以根据不同的需求来配置
- * @notes: 有一个重要的问题就是反射的效率太低,可以在测试中看出ChubbyGo版本的比原版本效率低了不少,内存也消耗了不少
+ * @brief: The reason for writing ChubbyGoConcurrentMap like this is that sync.Map and ConcurrentMap each have their own advantages and disadvantages. Users can configure according to different needs.
+ * @notes: One important issue is that the efficiency of reflection is too low. It can be seen in tests that the ChubbyGo version is significantly less efficient than the original version and consumes more memory.
  */
 
 const (
@@ -38,7 +38,7 @@ type ChubbyGoConcurrentMap struct {
 	Flag     uint32
 }
 
-func NewChubbyGoMap(flag uint32) *ChubbyGoConcurrentMap{
+func NewChubbyGoMap(flag uint32) *ChubbyGoConcurrentMap {
 	entry := ChubbyGoConcurrentMap{}
 	entry.Flag = flag
 
@@ -73,7 +73,7 @@ func (hs *ChubbyGoConcurrentMap) ChubbyGoMapGet(key string) (string, bool) {
 		}
 	} else {
 		log.Println("ERROR : ChubbyGoMapSet -> No such situation.")
-		return "",false
+		return "", false
 	}
 }
 
@@ -94,7 +94,7 @@ func (hs *ChubbyGoConcurrentMap) ChubbyGoMapSet(key string, value string) {
 	}
 }
 
-func (hs *ChubbyGoConcurrentMap) ChubbyGoMapDelete(key string){
+func (hs *ChubbyGoConcurrentMap) ChubbyGoMapDelete(key string) {
 	if hs.Flag == SyncMap {
 
 		Map := hs.MapEntry.Addr().Interface().(*sync.Map)

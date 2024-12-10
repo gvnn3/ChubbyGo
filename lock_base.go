@@ -9,125 +9,125 @@ import (
 	"time"
 )
 
-// 测试分为两个板块，基础锁定操作与延迟锁定
+// The test is divided into two sections: basic lock operations and delayed locking
 
-func main(){
+func main() {
 	clientConfigs := Connect.CreateClient()
 	err := clientConfigs.StartClient()
 	if err != nil {
 		log.Println(err.Error())
 	}
-	clientConfigs.SetUniqueFlake(uint64(0))	// 多次测试需要手动修改这个值
+	clientConfigs.SetUniqueFlake(uint64(0)) // Manually modify this value for multiple tests
 
-	// 打开一个文件，获得句柄
+	// Open a file and get a handle
 	ok, fd := clientConfigs.Open("/ls/ChubbyCell_lizhaolong")
 	if ok {
-		fmt.Printf("Get fd sucess, instanceSeq is %d\n", fd.InstanceSeq)
+		fmt.Printf("Get fd success, instanceSeq is %d\n", fd.InstanceSeq)
 	} else {
 		fmt.Printf("Error!\n")
 	}
 
 	filename := "text.txt"
-	// 在打开的文件夹下创建文件
-	ok, fileFd := clientConfigs.Create(fd, BaseServer.PermanentFile,filename)
+	// Create a file in the opened folder
+	ok, fileFd := clientConfigs.Create(fd, BaseServer.PermanentFile, filename)
 	if ok {
-		fmt.Printf("Create file(%s) sucess, instanceSeq is %d, checksum is %d.\n", filename,fileFd.InstanceSeq, fileFd.ChuckSum)
+		fmt.Printf("Create file(%s) success, instanceSeq is %d, checksum is %d.\n", filename, fileFd.InstanceSeq, fileFd.ChuckSum)
 	} else {
 		fmt.Printf("Create Error!\n")
 	}
 
-	// 删除句柄,注意句柄仅由create创建，delete删除
+	// Delete the handle, note that the handle is only created by create and deleted by delete
 	ok = clientConfigs.Delete(fileFd, BaseServer.Opdelete)
 	if ok {
-		fmt.Printf("Delete file(%s) sucess\n", filename)
+		fmt.Printf("Delete file(%s) success\n", filename)
 	} else {
 		fmt.Printf("Delete Error!\n")
 	}
 
-	// 第二次创建文件,返回的instanceSeq为1
-	ok, fileFd = clientConfigs.Create(fd, BaseServer.PermanentFile,filename)
+	// Create the file a second time, the returned instanceSeq is 1
+	ok, fileFd = clientConfigs.Create(fd, BaseServer.PermanentFile, filename)
 	if ok {
-		fmt.Printf("Create file(%s) sucess, instanceSeq is %d, checksum is %d.\n", filename, fileFd.InstanceSeq, fileFd.ChuckSum)
+		fmt.Printf("Create file(%s) success, instanceSeq is %d, checksum is %d.\n", filename, fileFd.InstanceSeq, fileFd.ChuckSum)
 	} else {
 		fmt.Printf("Create Error!\n")
 	}
 
-	// 对刚刚创建文件加锁
+	// Lock the newly created file
 	ok, token := clientConfigs.Acquire(fileFd, BaseServer.ReadLock, 0)
 	if ok {
-		fmt.Printf("Acquire (%s) sucess, Token is %d\n", filename, token)
+		fmt.Printf("Acquire (%s) success, Token is %d\n", filename, token)
 	} else {
 		fmt.Printf("Acquire Error!\n")
 	}
 
-	// 显然一个节点加了读锁以后再加有点蠢
-	ok , token = clientConfigs.Acquire(fileFd, BaseServer.ReadLock, 0)
+	// Obviously, it's a bit silly to add a read lock after adding a read lock
+	ok, token = clientConfigs.Acquire(fileFd, BaseServer.ReadLock, 0)
 	if ok {
-		fmt.Printf("Acquire (%s) sucess, Token is %d\n", filename, token)
-	} else {	// 显然加了写锁以后无法加读锁
+		fmt.Printf("Acquire (%s) success, Token is %d\n", filename, token)
+	} else { // Obviously, you can't add a read lock after adding a write lock
 		fmt.Printf("ReadLock Error!\n")
 	}
 
-	// 删除文件的时候带上自己加锁的Token
+	// Delete the file with the token you locked yourself
 	ok = clientConfigs.Release(fileFd, token)
 	if ok {
-		fmt.Printf("release (%s) sucess.\n", filename)
+		fmt.Printf("release (%s) success.\n", filename)
 	} else {
 		fmt.Printf("Release Error!\n")
 	}
 
 	ok = clientConfigs.Release(fileFd, token)
 	if ok {
-		fmt.Printf("release (%s) sucess.\n", filename)
+		fmt.Printf("release (%s) success.\n", filename)
 	} else {
 		fmt.Printf("Release Error!\n")
 	}
 
-	ok, token = clientConfigs.Acquire(fileFd, BaseServer.WriteLock,1000)
+	ok, token = clientConfigs.Acquire(fileFd, BaseServer.WriteLock, 1000)
 	if ok {
-		fmt.Printf("Acquire (%s) sucess, Token is %d\n", filename, token)
-	} else {	// 显然加了写锁以后无法加读锁
+		fmt.Printf("Acquire (%s) success, Token is %d\n", filename, token)
+	} else { // Obviously, you can't add a read lock after adding a write lock
 		fmt.Printf("WriteLock Error!\n")
 	}
-	// 超时以后使用此token去请求数据时会出现问题,TODO 但还没有实现带token的请求数据
+	// There will be problems when requesting data with this token after timeout, TODO but the request data with token has not been implemented yet
 
-	// 先失败
-	ok, token = clientConfigs.Acquire(fileFd, BaseServer.WriteLock,0)
+	// Fail first
+	ok, token = clientConfigs.Acquire(fileFd, BaseServer.WriteLock, 0)
 	if ok {
-		fmt.Printf("Acquire (%s) sucess, Token is %d\n", filename, token)
-	} else {	// 显然加了写锁以后无法加读锁
+		fmt.Printf("Acquire (%s) success, Token is %d\n", filename, token)
+	} else { // Obviously, you can't add a read lock after adding a write lock
 		fmt.Printf("WriteLock Error!\n")
 	}
 
-	// 2000ms以后还能再次加锁成功,因为上一次的锁已经超时了
+	// After 2000ms, you can lock again successfully because the previous lock has timed out
 	time.Sleep(2000 * time.Millisecond)
 
-	ok, token = clientConfigs.Acquire(fileFd, BaseServer.WriteLock,0)
+	ok, token = clientConfigs.Acquire(fileFd, BaseServer.WriteLock, 0)
 	if ok {
-		fmt.Printf("Acquire (%s) sucess, Token is %d\n", filename, token)
-	} else {	// 显然加了写锁以后无法加读锁
+		fmt.Printf("Acquire (%s) success, Token is %d\n", filename, token)
+	} else { // Obviously, you can't add a read lock after adding a write lock
 		fmt.Printf("WriteLock Error!\n")
 	}
 
 	ok = clientConfigs.Release(fileFd, token)
 	if ok {
-		fmt.Printf("release (%s) sucess.\n", filename)
+		fmt.Printf("release (%s) success.\n", filename)
 	} else {
 		fmt.Printf("Release Error!\n")
 	}
 
-	// 使用上面已经解锁的token 应该返回false
+	// Using the token that has been unlocked above should return false
 	ok = clientConfigs.CheckToken(fileFd.PathName, token)
 	if ok {
-		fmt.Printf("CheckToken error！ filename(%s)\n", fileFd.PathName)
+		fmt.Printf("CheckToken error! filename(%s)\n", fileFd.PathName)
 	} else {
-		fmt.Printf("CheckToken sucess!\n")
+		fmt.Printf("CheckToken success!\n")
 	}
 
-	// 最后删除文件，方便测试lock_expand.go
+	// Finally, delete the file to facilitate testing lock_expand.go
 	ok = clientConfigs.Delete(fileFd, BaseServer.Opdelete)
 	if ok {
-		fmt.Printf("Delete file(%s) sucess\n", filename)
+		fmt.Printf("Delete file(%s) success\n", filename)
 	} else {
 		fmt.Printf("Delete Error!\n")
 	}

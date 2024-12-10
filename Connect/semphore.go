@@ -13,11 +13,11 @@
  * limitations under the License.
  */
 
-/* Code comment are all encoded in UTF-8.*/
+/* Code comments are all encoded in UTF-8.*/
 
 package Connect
 
-type Empty interface {}
+type Empty interface{}
 type Semaphore chan Empty
 
 // acquire n resources
@@ -30,7 +30,7 @@ func (s Semaphore) P(n int) {
 
 // release n resources
 func (s Semaphore) V(n int) {
-	if n < 0 {	// 防止一手client_handler.go connectAll中的小问题
+	if n < 0 { // Prevent a minor issue in client_handler.go connectAll
 		return
 	}
 	for i := 0; i < n; i++ {

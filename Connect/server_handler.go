@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-/* Code comment are all encoded in UTF-8.*/
+/* Code comments are all encoded in UTF-8.*/
 
 package Connect
 
@@ -31,35 +31,35 @@ import (
 	"time"
 )
 
-// 第一版的创建连接还是需要服务器之间都确定对方的IP，客户端也需要知道服务器的地址
-// TODO 后面可以改成类似redis，通过消息的交互得到其他节点的存在
+// The first version of creating connections still requires the servers to know each other's IP addresses, and the client also needs to know the server's address
+// TODO Later, it can be changed to something like Redis, where the existence of other nodes is obtained through message interaction
 
 type ServerConfig struct {
-	peers     []*rpc.Client        // 表示其他几个服务器的连接句柄
-	me        uint64               // 后面改成全局唯一ID
-	nservers  int                  // 表示一共有多少个服务器
-	kvserver  *BaseServer.RaftKV     // 一个raftkv实体
-	persister *Persister.Persister // 持久化实体
-	mu        sync.Mutex           // 用于保护本结构体的变量
-	// 不设置成大写没办法从配置文件中读出来
-	MaxRaftState   int      	`json:"maxraftstate"`    	// raft层日志压缩上限
-	Maxreries      int      	`json:"maxreries"`       	// 超时重连最大数
-	ServersAddress []string 	`json:"servers_address"` 	// 读取配置文件中的其他服务器地址
-	MyPort         string   	`json:"myport"`          	// 自己的端口号
-	TimeOutEntry   int      	`json:"timeout_entry"`   	// connectAll中定义的重传超时间隔 单位为毫秒
-	// 这三个要在解析完以后传给persister
-	// 后缀hdb全称为 "Honeycomb Database Backup file" 蜂巢数据备份文件
-	SnapshotFileName	string	`json:"snapshotfilename"`	// 快照的持久化文件名
-	RaftstateFileName	string	`json:"raftstatefilename"`	// raft状态的持久化名
-	PersistenceStrategy string	`json:"persistencestrategy"`// 对应着三条策略 见persister.go 注意配置文件中不能拼写错误
-	ChubbyGoMapStrategy string  `json:"chubbygomapstrategy"`// 对应两条策略:syncmap,concurrentmap;详细见chubbygomap.go
+	peers     []*rpc.Client        // Represents the connection handles of several other servers
+	me        uint64               // Later changed to a globally unique ID
+	nservers  int                  // Indicates how many servers there are in total
+	kvserver  *BaseServer.RaftKV   // A raftkv entity
+	persister *Persister.Persister // Persistence entity
+	mu        sync.Mutex           // Used to protect the variables of this structure
+	// If not set to uppercase, it cannot be read from the configuration file
+	MaxRaftState   int      `json:"maxraftstate"`    // Raft layer log compression limit
+	Maxreries      int      `json:"maxreries"`       // Maximum number of timeout retries
+	ServersAddress []string `json:"servers_address"` // Read the addresses of other servers from the configuration file
+	MyPort         string   `json:"myport"`          // Own port number
+	TimeOutEntry   int      `json:"timeout_entry"`   // Retransmission timeout interval defined in connectAll, in milliseconds
+	// These three need to be passed to persister after parsing
+	// The suffix hdb stands for "Honeycomb Database Backup file"
+	SnapshotFileName    string `json:"snapshotfilename"`    // Snapshot persistence file name
+	RaftstateFileName   string `json:"raftstatefilename"`   // Raft state persistence name
+	PersistenceStrategy string `json:"persistencestrategy"` // Corresponds to three strategies, see persister.go, note that the configuration file cannot be misspelled
+	ChubbyGoMapStrategy string `json:"chubbygomapstrategy"` // Corresponds to two strategies: syncmap, concurrentmap; see chubbygomap.go for details
 }
 
 /*
- * @brief: 拿到其他服务器的地址，分别建立RPC连接
- * @return:三种返回类型：超时;HttpError;成功
+ * @brief: Get the addresses of other servers and establish RPC connections respectively
+ * @return: Three return types: timeout; HttpError; success
  */
-// peers出现了条件竞争；修复，把服务启动在连接完成以后
+// Peers have a race condition; fix it by starting the service after the connection is complete
 func (cfg *ServerConfig) connectAll() error {
 	sem := make(Semaphore, cfg.nservers-1)
 	sem_number := 0
@@ -74,16 +74,16 @@ func (cfg *ServerConfig) connectAll() error {
 		}
 		client, err := rpc.DialHTTP("tcp", cfg.ServersAddress[i])
 		/*
-		 * 这里返回值有三种情况:
-		 * net.Dial返回error			： 重连
-		 * http.ReadResponse返回		： HTTP报错
-		 * 正常返回
+		 * There are three return situations here:
+		 * net.Dial returns error: retry
+		 * http.ReadResponse returns: HTTP error
+		 * Normal return
 		 */
 		if err != nil {
 			switch err.(type) {
-			case *net.OpError: // 与库实现挂钩 不同步版本的标准库实现这里可能需要改动
+			case *net.OpError: // Hooked with library implementation, may need to be modified if the standard library implementation is not synchronized
 				sem_number++
-				// 网络出现问题我们有理由报错重试，次数上限为MAXRERRIES，每次间隔时间翻倍
+				// If there is a network problem, we have reason to retry, with a maximum number of MAXRERRIES, and the interval time doubles each time
 				go func(index int) {
 					defer sem.P(1)
 					number := 0
@@ -95,12 +95,12 @@ func (cfg *ServerConfig) connectAll() error {
 						log.Printf("INFO : %s : Reconnecting for the %d time\n", cfg.ServersAddress[index], number+1)
 						number++
 						Timeout = Timeout * 2
-						time.Sleep(time.Duration(Timeout) * time.Millisecond) // 倍增重连时长
+						time.Sleep(time.Duration(Timeout) * time.Millisecond) // Exponential backoff for reconnection duration
 						TempClient, err := rpc.DialHTTP("tcp", cfg.ServersAddress[index])
 						if err != nil {
 							switch err.(type) {
 							case *net.OpError:
-								// 继续循环就ok
+								// Continue the loop
 								continue
 							default:
 								atomic.AddInt32(&HTTPError, 1)
@@ -108,17 +108,17 @@ func (cfg *ServerConfig) connectAll() error {
 							}
 						} else {
 							// cfg.mu.Lock()
-							// defer cfg.mu.Unlock()	// 没有协程会碰这个
-							log.Printf("INFO : %d 与 %s 连接成功\n", cfg.me, cfg.ServersAddress[index])
+							// defer cfg.mu.Unlock()	// No goroutine will touch this
+							log.Printf("INFO : %d successfully connected to %s\n", cfg.me, cfg.ServersAddress[index])
 							cfg.peers[index] = TempClient
 							return
 						}
 					}
-					// 只有循环cfg.maxreries遍没有结果以后才会跑到这里
-					// 也就是连接超时
+					// Only after looping cfg.maxreries times without result will it reach here
+					// That is, connection timeout
 					timeout_mutex.Lock()
 					defer timeout_mutex.Unlock()
-					TimeOut = append(TimeOut, index) // 为了方便打日志
+					TimeOut = append(TimeOut, index) // For easy logging
 					return
 				}(i)
 				continue
@@ -126,42 +126,42 @@ func (cfg *ServerConfig) connectAll() error {
 				atomic.AddInt32(&HTTPError, 1)
 			}
 		} else {
-			log.Printf("INFO : %d 与 %s 连接成功\n", cfg.me, cfg.ServersAddress[i])
+			log.Printf("INFO : %d successfully connected to %s\n", cfg.me, cfg.ServersAddress[i])
 			cfg.peers[i] = client
 		}
 	}
-	// 保证所有的goroutinue跑完以后退出，即要么全部连接成功，要么报错
+	// Ensure that all goroutines finish before exiting, i.e., either all connections are successful or an error is reported
 	sem.V(sem_number)
 
 	TimeOutLength := len(TimeOut)
-	if atomic.LoadInt32(&HTTPError) > 0 || TimeOutLength > 0 { // 失败以后释放连接
+	if atomic.LoadInt32(&HTTPError) > 0 || TimeOutLength > 0 { // Release connections after failure
 		for i := 0; i < servers_length; i++ {
-			cfg.peers[i].Close() // 就算连接已经根本没建立进行close也只会返回ErrShutdown
+			cfg.peers[i].Close() // Even if the connection was never established, calling close will only return ErrShutdown
 		}
 		if TimeOutLength > 0 {
 			return ErrorInConnectAll(time_out)
 		}
 		return ErrorInConnectAll(http_error)
 	} else {
-		return nil // 没有发生任何错误 成功
+		return nil // No errors occurred, success
 	}
 }
 
 /*
- * @brief: 把raft和kvraft的挂到RPC上
+ * @brief: Register raft and kvraft to RPC
  */
 func (cfg *ServerConfig) serverRegisterFun() {
-	// 注册RPC时只要结构体中有不符合要求的成员函数存在就会打印日志,挺烦的
-	// 把RaftKv挂到RPC上
+	// When registering RPC, as long as there are members in the structure that do not meet the requirements, logs will be printed, which is quite annoying
+	// Register RaftKv to RPC
 	err := rpc.Register(cfg.kvserver)
 	if err != nil {
-		// RPC会把全部函数中满足规则的函数注册，如果存在不满足规则的函数则会返回err
+		// RPC will register all functions that meet the rules, and if there are functions that do not meet the rules, it will return err
 		log.Println(err.Error())
 	} else {
 		log.Println("INFO : Kvserver has been successfully registered.")
 	}
 
-	// 把Raft挂到RPC上
+	// Register Raft to RPC
 	err1 := rpc.Register(cfg.kvserver.GetRaft())
 	if err1 != nil {
 		log.Println(err1.Error())
@@ -169,33 +169,33 @@ func (cfg *ServerConfig) serverRegisterFun() {
 		log.Println("INFO : Raft has been successfully registered.")
 	}
 
-	// 通过函数把mathutil中提供的服务注册到http协议上，方便调用者可以利用http的方式进行数据传输
+	// Register the services provided by mathutil to the HTTP protocol through functions, so that callers can use HTTP for data transmission
 	rpc.HandleHTTP()
 
-	// 在特定的端口进行监听
+	// Listen on a specific port
 	listen, err2 := net.Listen("tcp", cfg.MyPort)
 	if err2 != nil {
 		log.Println(err2.Error())
 	}
 	go func() {
-		// 调用方法去处理http请求
+		// Call the method to handle HTTP requests
 		http.Serve(listen, nil)
 	}()
 }
 
 /*
- * @brief: 检查从json中解析的字段是否符合规定
- * @return: 解析正确返回true,错误为false
+ * @brief: Check whether the fields parsed from json meet the requirements
+ * @return: Returns true if parsed correctly, false if there is an error
  */
 func (cfg *ServerConfig) checkJsonParser() error {
-	// 当配置数小于7的时候，留给其他服务器启动的时间太少，配置为8的时候，至少已经过了51秒了(2^9-2^1)
+	// When the configuration number is less than 7, the time left for other servers to start is too short. When the configuration is 8, at least 51 seconds have passed (2^9-2^1)
 	if cfg.Maxreries <= 7 {
 		return ErrorInParserConfig(maxreries_to_small)
 	}
 
 	ServerAddressLength := len(cfg.ServersAddress)
 
-	if ServerAddressLength < 2 { // 至少三台，且推荐为奇数,计算时加上自己
+	if ServerAddressLength < 2 { // At least three, and it is recommended to be an odd number, including yourself
 		return ErrorInParserConfig(serveraddress_length_to_small)
 	}
 
@@ -209,8 +209,8 @@ func (cfg *ServerConfig) checkJsonParser() error {
 		return ErrorInParserConfig(parser_port_error)
 	}
 
-	// TODO 看下几个函数的收敛区间
-	// 一个超时区间不能太大或者太小。这个区间是可以保证
+	// TODO Check the convergence range of several functions
+	// A timeout interval cannot be too large or too small. This interval can be guaranteed
 	if cfg.TimeOutEntry <= 100 || cfg.TimeOutEntry >= 2000 {
 		return ErrorInParserConfig(time_out_entry_error)
 	}
@@ -220,23 +220,23 @@ func (cfg *ServerConfig) checkJsonParser() error {
 		return ErrorInParserConfig(raft_maxraftstate_not_suitable)
 	}
 
-	// 解析SnapshotFileName是否符合规范
-	if !ParserFileName(cfg.SnapshotFileName){
+	// Parse whether SnapshotFileName meets the specifications
+	if !ParserFileName(cfg.SnapshotFileName) {
 		return ErrorInParserConfig(parser_snapshot_file_name)
 	}
 
-	// 解析RaftstateFileName是否符合规范
-	if !ParserFileName(cfg.RaftstateFileName){
+	// Parse whether RaftstateFileName meets the specifications
+	if !ParserFileName(cfg.RaftstateFileName) {
 		return ErrorInParserConfig(parser_raftstate_file_name)
 	}
 
-	// 解析PersistenceStrategy是否符合规范
-	if !checkPersistenceStrategy(cfg.PersistenceStrategy){
+	// Parse whether PersistenceStrategy meets the specifications
+	if !checkPersistenceStrategy(cfg.PersistenceStrategy) {
 		return ErrorInParserConfig(parser_persistence_strategy)
 	}
 
-	// 解析ChubbyGoMapStrategy是否符合规范
-	if !checkChubbyGoMapStrategy(cfg.ChubbyGoMapStrategy){
+	// Parse whether ChubbyGoMapStrategy meets the specifications
+	if !checkChubbyGoMapStrategy(cfg.ChubbyGoMapStrategy) {
 		return ErrorInParserConfig(parser_chubbygomap_strategy)
 	}
 
@@ -244,35 +244,35 @@ func (cfg *ServerConfig) checkJsonParser() error {
 }
 
 /*
- * @brief: 再调用这个函数的时候开始服务,
- * @return: 三种返回类型：路径解析错误;connectAll连接出现问题;成功
+ * @brief: Start the service when this function is called,
+ * @return: Three return types: path parsing error; connectAll connection problem; success
  */
 func (cfg *ServerConfig) StartServer() error {
 	var flag bool = false
 	if len(ServerListeners) == 1 {
-		// 正确读取配置文件;这里注意,checkJsonParser是检查范围和字符串的格式,解析的过程会把int转string之间的错误解析出来
+		// Correctly read the configuration file; note here, checkJsonParser checks the range and format of the string, and the parsing process will parse out errors between int and string
 		flag = ServerListeners[0]("Config/server_config.json", cfg)
-		if !flag { // 文件打开失败
+		if !flag { // File open failed
 			log.Printf("Open config File Error!")
 			return ErrorInStartServer(parser_error)
 		}
 
-		// 从json中取出的字段格式错误
+		// Fields parsed from json are in the wrong format
 		if ParserErr := cfg.checkJsonParser(); ParserErr != nil {
 			log.Println(ParserErr.Error())
 			return ErrorInStartServer(parser_error)
 		}
 
-		// 填充cfg.Persister
+		// Fill cfg.Persister
 		cfg.fillPersister()
 
 	} else {
 		log.Printf("ERROR : [%d] ServerListeners Error!\n", cfg.me)
-		// 这种情况只有在调用服务没有启动read_server_config.go的init函数时会出现
+		// This situation only occurs when the service is called without starting the init function of read_server_config.go
 		return ErrorInStartServer(Listener_error)
 	}
 
-	// 这里初始化的原因是要让注册的结构体是后面运行的结构体
+	// The reason for initialization here is to let the registered structure be the structure that runs later
 	cfg.kvserver = BaseServer.StartKVServerInit(cfg.me, cfg.persister, cfg.MaxRaftState, transformChubbyGomap2uint32(cfg.ChubbyGoMapStrategy))
 	cfg.kvserver.StartRaftServer(&cfg.ServersAddress)
 
@@ -281,30 +281,30 @@ func (cfg *ServerConfig) StartServer() error {
 		log.Println(err.Error())
 		return ErrorInStartServer(connect_error)
 	}
-	cfg.kvserver.StartKVServer(cfg.peers) // 启动服务
+	cfg.kvserver.StartKVServer(cfg.peers) // Start the service
 	log.Printf("INFO : [%d] The connection is successful and the service has started successfully!\n", cfg.me)
 	return nil
 }
 
 /*
- * @brief: 返回一个Config结构体，用于开始一个服务
- * @param: nservers这个集群需要的机器数，包括本身，而且每个服务器初始化的时候必须配置正确
+ * @brief: Return a Config structure to start a service
+ * @param: nservers The number of machines required for this cluster, including itself, and each server must be configured correctly when initialized
  */
 func CreatServer(nservers int) *ServerConfig {
 	cfg := &ServerConfig{}
 
 	cfg.nservers = nservers
 	cfg.MaxRaftState = 0
-	cfg.peers = make([]*rpc.Client, cfg.nservers-1) // 存储了自己以外的其他服务器的RPC封装
-	cfg.me = Flake.GetSonyflake()                   // 全局ID需要传给raft层
+	cfg.peers = make([]*rpc.Client, cfg.nservers-1) // Stores the RPC encapsulation of other servers except itself
+	cfg.me = Flake.GetSonyflake()                   // The global ID needs to be passed to the raft layer
 	cfg.persister = Persister.MakePersister()
 
 	return cfg
 }
 
 // --------------------------
-// 使用Listener模式避免/Connect和/Config的环状引用
-// 当然可能好的设计可以避免这样的问题，比如把读配置文件中的函数参数改成接口，用反射去推
+// Use the Listener pattern to avoid circular references between /Connect and /Config
+// Of course, a good design might avoid this problem, such as changing the function parameters for reading configuration files to interfaces and using reflection to push
 
 type ServerListener func(filename string, cfg *ServerConfig) bool
 
@@ -317,14 +317,14 @@ func RegisterRestServerListener(l ServerListener) {
 // --------------------------
 
 /*
- * @brief: 把从json中解出的SnapshotFileName,RaftstateFileName,PersistenceStrategy三项填充到Persister
- * @notes: 这个函数建立在已执行完checkJsonParser之后，也就是其中的值应该都满足我们的要求
+ * @brief: Fill the three items parsed from json: SnapshotFileName, RaftstateFileName, PersistenceStrategy into Persister
+ * @notes: This function is based on the completion of checkJsonParser, that is, the values in it should meet our requirements
  */
-func (cfg *ServerConfig) fillPersister(){
+func (cfg *ServerConfig) fillPersister() {
 	cfg.persister.RaftstateFileName = cfg.RaftstateFileName
 	cfg.persister.SnapshotFileName = cfg.SnapshotFileName
 
-	// 配置文件中策略这一项忽略大小写
+	// Ignore case in the strategy item in the configuration file
 	LowerStrategy := strings.ToLower(cfg.PersistenceStrategy)
 
 	if LowerStrategy == "everysec" {

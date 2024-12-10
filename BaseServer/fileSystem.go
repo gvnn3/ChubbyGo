@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-/* Code comment are all encoded in UTF-8.*/
+/* Code comments are all encoded in UTF-8.*/
 
 package BaseServer
 
@@ -23,11 +23,11 @@ import (
 	"log"
 )
 
-// ps:文件系统中的所有操作都建立在有锁的基础上
+// ps: All operations in the file system are based on locks
 
 const (
 	Directory     = iota
-	TemporaryFile // 瞬时节点会在没有客户端打开它时自动删除
+	TemporaryFile // Temporary nodes will be automatically deleted when no client opens them
 	PermanentFile
 )
 
@@ -52,17 +52,17 @@ const (
 	FileNameError
 )
 
-func (err ChubbyGoFileSystemError) Error() string{
+func (err ChubbyGoFileSystemError) Error() string {
 	var ans string
 	switch err {
 	case PathError:
-		ans = "Filename and directory have some name."
+		ans = "Filename and directory have the same name."
 		break
 	case CheckSumError:
-		ans = "Client send a error CheckSum."
+		ans = "Client sent an incorrect CheckSum."
 		break
 	case InstanceSeqError:
-		ans = "Client send a error InstanceSeq."
+		ans = "Client sent an incorrect InstanceSeq."
 		break
 	case DoesNotSupportRecursiveDeletion:
 		ans = "Does not support recursive deletion, there are still files in this directory."
@@ -80,7 +80,7 @@ func (err ChubbyGoFileSystemError) Error() string{
 		ans = "Only directories can create files."
 		break
 	case TokenSeqError:
-		ans = "Client send a error TokenSeq."
+		ans = "Client sent an incorrect TokenSeq."
 		break
 	case FileNameError:
 		ans = "The inserted file has disallowed characters."
@@ -92,68 +92,67 @@ func (err ChubbyGoFileSystemError) Error() string{
 }
 
 type FileSystemNode struct {
-	// 在此文件下创建新文件时要传入的参数
-	fileType   int       // 三种文件类型; 不支持链接文件
-	readACLs   *[]uint64 // 读权限access control lists
-	writeACLs  *[]uint64 // 写权限,请求任意类型的锁都需要写权限
-	modifyACLs *[]uint64 // 修改此节点ACL的权限列表
-	fileName   string    // 此文件的名称
+	// Parameters to be passed in when creating a new file under this file
+	fileType   int       // Three types of files; link files are not supported
+	readACLs   *[]uint64 // Read access control lists
+	writeACLs  *[]uint64 // Write access control lists, write permission is required for any type of lock request
+	modifyACLs *[]uint64 // List of permissions to modify this node's ACL
+	fileName   string    // The name of this file
 
-	instanceSeq uint64 // 实例编号:大于任意先前的同名节点的实例编号
-	tokenSeq    uint64 // 锁生成编号:当节点的锁从空闲状态转换到被持有状态时，这个值会增加。用于在持有锁超时时取消上一个seq的权限
-	aCLsSeq     uint64 // ACL生成编号：当写入节点的 ACL 名称时，这种情况会增加。	// 目前没有看懂有什么用处
+	instanceSeq uint64 // Instance number: greater than the instance number of any previous node with the same name
+	tokenSeq    uint64 // Lock generation number: this value increases when the node's lock transitions from idle to held. Used to cancel the previous seq's permissions when the lock times out
+	aCLsSeq     uint64 // ACL generation number: this value increases when writing the ACL name of the node. // Currently not understood what it is used for
 
-	// 本来想加入FileSystemNode地址,但是go的栈会变,所以打消了这个念头
-	// 因为在文件描述符期间instanceSeq不会改变,但总体是改变的;
-	// 如此看来Checksum不一定是整个结构体的某种校验和,只要保证随机性就ok了;这句话想的大错特错,因为每个节点会受到相同的checksum,如果多个节点生成的不一样会导致leader成功,其他节点失败
-	checksum uint64 // 返回客户端用以构造一个难以被伪造的文件描述符
+	// Originally wanted to add the address of FileSystemNode, but the stack of go will change, so gave up this idea
+	// Because the instanceSeq will not change during the file descriptor period, but it will change overall;
+	// It seems that the checksum is not necessarily a checksum of the entire structure, as long as the randomness is guaranteed; this statement is very wrong, because each node will receive the same checksum, if multiple nodes generate different ones, it will cause the leader to succeed and other nodes to fail
+	checksum uint64 // Return to the client to construct a file descriptor that is difficult to forge
 
-	OpenReferenceCount     uint64 // open的引用计数,主要用于文件夹,可以理解为文件的描述符没什么意义,文件有意义的是LockType
-	nowLockType            int    // 目前的上锁类型,有三种情况
-	readLockReferenceCount uint64 // 读锁的引用计数
+	OpenReferenceCount     uint64 // Open reference count, mainly used for folders, can be understood as file descriptors are meaningless, files are meaningful for LockType
+	nowLockType            int    // Current lock type, there are three situations
+	readLockReferenceCount uint64 // Read lock reference count
 
-	// 提供的锁是建议性锁，也就是不加锁也可以通过get，put操作对于文件内容进行操作，不过只提供string的存储，客户可以自定义协议
-	nowPath       string                     // 标记当前的路径，用于从raft日志字典中获取此文件中存储的值
-	nextNameCache map[string]uint64          // 其实就是下一级的InstanceSeq;当该节点是文件时此字段无效
-	next          map[string]*FileSystemNode // 使用map可以更快的找到下一级的全部文件节点，且有序;当该节点是文件时此字段无效
+	// The provided lock is advisory, that is, you can perform get and put operations on the file content without locking, but only string storage is provided, and the client can customize the protocol
+	nowPath       string                     // Mark the current path, used to get the value stored in this file from the raft log dictionary
+	nextNameCache map[string]uint64          // Actually the InstanceSeq of the next level; this field is invalid when the node is a file
+	next          map[string]*FileSystemNode // Using map can find all file nodes of the next level faster and orderly; this field is invalid when the node is a file
 }
 
 /*
- * @brief: 基于FileSystemNode生成一个新的CheckSum; 其实保证随机性就ok了;我这种生成方式最大程度与文件有关
- * @notes: 大费周章的生成这样一个数是否有必要呢?虽然用的也不多
- * @!!!!!: 完全想错了;我们需要一个以文件内容生成的校验和,这样才可以在不同的节点都执行成功
+ * @brief: Generate a new CheckSum based on FileSystemNode; actually just ensure randomness; is it necessary to generate such a number with great effort? Although it is not used much
+ * @notes: Completely wrong; we need a checksum generated by the file content, so that it can be executed successfully on different nodes
  */
 /*func (Fsn *FileSystemNode) makeCheckSum() uint64 {
 	var res uint64
 
-	// step1: 取对象地址的值
-	// AddressValue可以获取对象的地址的64位整数具体的值
+	// step1: Take the value of the object address
+	// AddressValue can get the specific value of the 64-bit integer of the object address
 	p := reflect.ValueOf(unsafe.Pointer(&Fsn))
-	// 因为整个地址的低位是0Xc起头的，有一位可以推出来，程序比较小的时候很多位都可以推出来，所以我们使用右边32位
+	// Because the low bit of the entire address starts with 0Xc, one bit can be deduced, and many bits can be deduced when the program is small, so we use the right 32 bits
 	// var AddressValue uint64 = uint64(p.Pointer())
 	res = uint64(p.Pointer())
 
-	// step2: 得instanceSeq的值，暂定后十位
+	// step2: Get the value of instanceSeq, temporarily set the last ten bits
 	res += Fsn.instanceSeq << 32
 
-	// step3: 随机生成一个值
-	rand.Seed(time.Now().Unix()) // 用时间作为随机数种子
-	high := rand.Intn(2<<22 - 1) // 伪随机数
+	// step3: Randomly generate a value
+	rand.Seed(time.Now().Unix()) // Use time as the random number seed
+	high := rand.Intn(2<<22 - 1) // Pseudo-random number
 
 	res += uint64(high) << 42
 
 	// [63  42][41  32][31  0]
-	// [随机数][instanceSeq][address]
+	// [Random number][instanceSeq][address]
 	return res
 }*/
 
 /*
- * @notes: 用instanceSeq,nowPath,len(next),len(nextNameCache)为参数生成64位校验和,完全没有必要使用CRC,MD5,
- * 只要保证相同的输入能得到相同的输出就可以了; 这样可能会多次open文件的checksum相同
- * 显然instanceSeq最小值为1，checksum也不可能是0，所以ClientInstanceSeq和ClientInstanceSeq可以使用0作为无效值
+ * @notes: Use instanceSeq, nowPath, len(next), len(nextNameCache) as parameters to generate a 64-bit checksum, there is no need to use CRC, MD5,
+ * as long as the same input can get the same output; this may cause the checksum of multiple open files to be the same
+ * Obviously the minimum value of instanceSeq is 1, and the checksum cannot be 0, so ClientInstanceSeq and ClientInstanceSeq can use 0 as an invalid value
  */
 func (Fsn *FileSystemNode) makeCheckSum() uint64 {
-	// 生成20位字符串,每一位都是16进制的数字
+	// Generate a 20-bit string, each bit is a hexadecimal number
 	hash := sha1.New()
 	hash.Write([]byte(Fsn.nowPath))
 	sha1Res := hash.Sum(nil)
@@ -161,46 +160,46 @@ func (Fsn *FileSystemNode) makeCheckSum() uint64 {
 	var res uint64 = 0
 
 	for i := 0; i < 14; i++ {
-		res = res | (uint64(sha1Res[i]) << (4*i))
+		res = res | (uint64(sha1Res[i]) << (4 * i))
 	}
 
 	//[63,56][55,0]
 
-	res = res | Fsn.instanceSeq << 57
+	res = res | Fsn.instanceSeq<<57
 
-	res = res | uint64(len(Fsn.next) << 59)
+	res = res | uint64(len(Fsn.next)<<59)
 
-	res = res | uint64(len(Fsn.nextNameCache) << 61)
+	res = res | uint64(len(Fsn.nextNameCache)<<61)
 
 	return res
 }
 
 /*
- * @brief: Type:创建的文件的类型;name:文件名称;后面则是文件初始的操作权限
- * @return: 插入正确返回true;否则返回false
- * @notes: 文件被创建的时候默认打开,即引用计数为1,能够插入文件证明客户端的InstanceSeq是目录的
+ * @brief: Type: the type of file to be created; name: file name; the following are the initial operation permissions of the file
+ * @return: Return true if inserted correctly; otherwise return false
+ * @notes: When the file is created, it is opened by default, that is, the reference count is 1, and the client can insert the file to prove that the client's InstanceSeq is the directory's
  */
 func (Fsn *FileSystemNode) Insert(InstanceSeq uint64, Type int, name string, ReadAcl *[]uint64, WriteAcl *[]uint64, ModifyAcl *[]uint64) (uint64, uint64, error) {
 	if InstanceSeq < Fsn.instanceSeq {
 		return 0, 0, ChubbyGoFileSystemError(InstanceSeqError)
 	}
 
-	if Fsn.fileType != Directory { // 仅目录允许创建新文件
+	if Fsn.fileType != Directory { // Only directories are allowed to create new files
 		return 0, 0, ChubbyGoFileSystemError(OnlyDirectoriesCanCreateFiles)
 	}
 
-	// 文件名只要不包含'/'和' '就可以了，后面加上url判断以后需要修改这里
+	// The file name can only not contain '/' and ' ', and the url judgment needs to be modified here later
 	bytesFileName := str2sbyte(name)
 	bytesLength := len(bytesFileName)
-	for i:=0; i<bytesLength;i++{
-		if bytesFileName[i] == '/' || bytesFileName[i] == ' '{
+	for i := 0; i < bytesLength; i++ {
+		if bytesFileName[i] == '/' or bytesFileName[i] == ' ' {
 			return 0, 0, ChubbyGoFileSystemError(FileNameError)
 		}
 	}
 
-	// 目录与文件不可以重名
+	// Directories and files cannot have the same name
 	_, IsExist := Fsn.next[name]
-	if IsExist { // Fsn中存在着与这个文件文件名相同的文件
+	if IsExist { // Fsn contains a file with the same name as this file
 		return 0, 0, ChubbyGoFileSystemError(PathError)
 	}
 
@@ -217,20 +216,20 @@ func (Fsn *FileSystemNode) Insert(InstanceSeq uint64, Type int, name string, Rea
 	NewNode.writeACLs = WriteAcl
 	NewNode.modifyACLs = ModifyAcl
 
-	// 初始值设定为2，协定0为无效值.1为delete的删除值
-	if Seq, ok:=Fsn.nextNameCache[name]; ok{
-		NewNode.instanceSeq = Seq // 使用的时候直接用就好，delete的时候会递增
+	// The initial value is set to 2, with 0 as the invalid value and 1 as the delete value
+	if Seq, ok := Fsn.nextNameCache[name]; ok {
+		NewNode.instanceSeq = Seq // Use it directly when using it, and increment it when deleting
 	} else {
 		NewNode.instanceSeq = 2
 		Fsn.nextNameCache[name] = 2
 	}
-	NewNode.tokenSeq = 2      // 使用的时候先递增，再取值，也就是说TockenSeq最低有效值是2
+	NewNode.tokenSeq = 2 // Increment before use, which means the minimum valid value of TockenSeq is 2
 	NewNode.aCLsSeq = 0
 	NewNode.checksum = NewNode.makeCheckSum()
 
 	NewNode.nowLockType = NotLock
 	NewNode.readLockReferenceCount = 0
-	// 需要在每一个Cell中保证唯一性
+	// Need to ensure uniqueness in each Cell
 	NewNode.nowPath = Fsn.nowPath + "/" + name
 	NewNode.OpenReferenceCount = 1
 	Fsn.next[name] = NewNode
@@ -241,9 +240,9 @@ func (Fsn *FileSystemNode) Insert(InstanceSeq uint64, Type int, name string, Rea
 }
 
 /*
- * @param: 文件描述符传来的InstanceSeq，要删除的文件的名字
- * @return: 成功删除返回true，否则返回false
- * @notes: 需要检测name是否存在;
+ * @param: InstanceSeq from the file descriptor, the name of the file to be deleted
+ * @return: Return true if deleted successfully, otherwise return false
+ * @notes: Need to check if the name exists;
  */
 func (Fsn *FileSystemNode) Delete(InstanceSeq uint64, filename string, opType int, checkSum uint64) error {
 	Node, IsExist := Fsn.next[filename]
@@ -253,7 +252,7 @@ func (Fsn *FileSystemNode) Delete(InstanceSeq uint64, filename string, opType in
 	}
 
 	if checkSum != Node.checksum {
-		log.Printf("WARNING : A danger requirment, unmatched checksum, now(%d) -> client(%d).\n", Node.checksum, checkSum)
+		log.Printf("WARNING : A dangerous requirement, unmatched checksum, now(%d) -> client(%d).\n", Node.checksum, checkSum)
 		return ChubbyGoFileSystemError(CheckSumError)
 	}
 
@@ -264,7 +263,7 @@ func (Fsn *FileSystemNode) Delete(InstanceSeq uint64, filename string, opType in
 
 	if Node.fileType == Directory && len(Fsn.next) != 0 {
 		log.Println("WARNING : Recursive deletion of files is currently not allowed!")
-		return ChubbyGoFileSystemError(DoesNotSupportRecursiveDeletion) // TODO 目前不支持这种递归删除，因为下面文件可能还持有锁，这个后面再说
+		return ChubbyGoFileSystemError(DoesNotSupportRecursiveDeletion) // TODO Currently does not support this recursive deletion, because the files below may still hold locks, this will be discussed later
 	}
 
 	if Node.OpenReferenceCount <= 0 {
@@ -274,145 +273,54 @@ func (Fsn *FileSystemNode) Delete(InstanceSeq uint64, filename string, opType in
 
 	Node.OpenReferenceCount--
 
-	// close :引用计数为零时只有临时文件会被删除，永久文件和目录文件都不会被删除
-	// delete: 相反
+	// close: Only temporary files will be deleted when the reference count is zero, permanent files and directory files will not be deleted
+	// delete: On the contrary
 	if Node.OpenReferenceCount != 0 {
-		return nil // delete成功，其实只是把客户端的句柄消除掉而已
+		return nil // delete succeeded, actually just removed the client's handle
 	}
 
-	// name存在,引用计数为零且与远端InstanceSeq相等，可以执行删除
-	if opType == Opdelete || Node.fileType == TemporaryFile { // 此次是delete操作,如果是close操作的话永久文件和目录则不需要删除
+	// The name exists, the reference count is zero and is equal to the remote InstanceSeq, deletion can be performed
+	if opType == Opdelete || Node.fileType == TemporaryFile { // This time it is a delete operation, if it is a close operation, permanent files and directories do not need to be deleted
 		delete(Fsn.next, filename)
-		Fsn.nextNameCache[filename]++ // 下一次创建的时候INstanceSeq与上一次不同
+		Fsn.nextNameCache[filename]++ // The next time it is created, the INstanceSeq is different from the last time
 	}
 
-	// 当文件的引用计数为零的时候更新Checksum,也就说下一次打开时得到的句柄是不一样的,可以有效防止客户端伪造checkSum
+	// When the reference count of the file is zero, update the Checksum, that is, the handle obtained the next time it is opened is different, which can effectively prevent the client from forging the checkSum
 	Node.checksum = Node.makeCheckSum()
 
 	return nil
 }
 
 /*
- * @param: 文件描述符传来的InstanceSeq;要删除的文件的名字
- * @return: 成功删除返回true，否则返回false
- * @notes: 需要检测name是否存在; 调用方先判断bool再看seq
- */
-func (Fsn *FileSystemNode) Acquire(InstanceSeq uint64, filename string, locktype int, checksum uint64) (uint64, error) {
-	Node, IsExist := Fsn.next[filename]
-
-	if !IsExist {
-		log.Printf("INFO : %s/%s does not exist.\n", Fsn.nowPath, filename)
-		return 0, ChubbyGoFileSystemError(PathError)
-	}
-
-	if checksum != Node.checksum {
-		log.Printf("WARNING : A danger requirment, unmatched checksum, now(%d) -> client(%d).\n", checksum, Node.checksum)
-		return 0, ChubbyGoFileSystemError(CheckSumError)
-	}
-
-	if InstanceSeq < Node.instanceSeq {
-		log.Println("WARNING : Acquire -> Request from a backward file descriptor!")
-		return 0, ChubbyGoFileSystemError(InstanceSeqError)
-	}
-
-	if Node.nowLockType == NotLock {
-		if locktype == ReadLock {
-			Node.readLockReferenceCount++
-		}
-		Node.nowLockType = locktype
-	} else if Node.nowLockType == ReadLock && locktype == ReadLock {
-		Node.readLockReferenceCount++
-		return Node.tokenSeq, nil
-	} else if Node.nowLockType == WriteLock { // 和下面分开写是为了清楚的看到所有情况
-		return 0, ChubbyGoFileSystemError(LockTypeError)
-	} else { // now readLock, args writelock
-		return 0, ChubbyGoFileSystemError(LockTypeError)
-	}
-
-	return Node.tokenSeq, nil // 直接返回当前值，在release的时候加1就可以了
-}
-
-/*
- * @param: 文件描述符传来的InstanceSeq;要释放的文件(锁)的名字
- * @return: 成功删除返回true，否则返回false
- * @notes: 需要检测name是否存在
- */
-func (Fsn *FileSystemNode) Release(InstanceSeq uint64, filename string, Token uint64, checksum uint64) error {
-	Node, IsExist := Fsn.next[filename]
-
-	if !IsExist {
-		log.Printf("INFO : %s/%s does not exist.\n", Fsn.nowPath, filename)
-		return ChubbyGoFileSystemError(PathError)
-	}
-
-	if checksum != Node.checksum {
-		log.Printf("WARNING : A danger requirment, unmatched checksum, now(%d) -> client(%d).\n", checksum, Node.checksum)
-		return ChubbyGoFileSystemError(CheckSumError)
-	}
-
-	// 防止落后的锁持有者删除掉现有的被其他节点持有的锁
-	if Token < Node.tokenSeq {
-		log.Printf("WARNING : Have a lagging client want release file(%s) now(%d) node.clientSeq(%d).\n", Node.nowPath, Token, Node.tokenSeq)
-		return ChubbyGoFileSystemError(TokenSeqError)
-	}
-
-	if InstanceSeq < Node.instanceSeq {
-		log.Println("WARNING : Release -> Request from a backward file descriptor!")
-		return ChubbyGoFileSystemError(InstanceSeqError)
-	}
-
-	if Node.nowLockType == NotLock {
-		log.Println("WARNING : Error operation, release before acquire.")
-		return ChubbyGoFileSystemError(ReleaseBeforeAcquire)
-	} else if Node.nowLockType == ReadLock { // TODO 但显然这种做法会使得写操作可能饥饿
-		if Node.readLockReferenceCount >= 1 {
-			Node.readLockReferenceCount--
-		} else { // 显然不可能出现这种情况
-			log.Println("ERROR : Release -> Impossible situation.")
-		}
-	}
-
-	if Node.readLockReferenceCount > 0 {
-		return nil
-	}
-
-	// 当前锁定类型是写锁或者读锁引用计数为0,显然当所有的读锁都解锁以后才会递增token
-	Node.tokenSeq++
-	Node.nowLockType = NotLock
-
-	return nil
-}
-
-/*
- * @param: 文件描述符传来的InstanceSeq;要打开的文件名
- * @return: 返回当前文件的instanceSeq
- * @notes: 对于一个文件来说客户端open操作可以检查某个文件是否存在,如果存在会返回一个句柄,反之返回false;
-		对于一个目录来说open可以使其获取句柄后创建文件;
+ * @param: InstanceSeq from the file descriptor; the name of the file to be locked
+ * @return: Return the current file's instanceSeq
+ * @notes: For a file, the client's open operation can check whether a file exists, if it exists, it will return a handle, otherwise it will return false;
+		For a directory, open can get a handle to create a file;
 */
 func (Fsn *FileSystemNode) Open(name string) (uint64, uint64) {
-	// TODO 这里应该做一些权限的检测，但是现在并没有想好如何划分权限
+	// TODO Some permission checks should be done here, but I haven't thought about how to divide permissions yet
 
-	// Open返回的应该是本文件的instanceSeq
+	// Open should return the instanceSeq of this file
 	return Fsn.instanceSeq, Fsn.checksum
 }
 
 /*
- * @brief: 用于初始化每个Cell内的根目录
- * @return: 返回根目录的实体
+ * @brief: Used to initialize the root directory of each Cell
+ * @return: Return the entity of the root directory
  */
 func InitRoot() *FileSystemNode {
 	root := &FileSystemNode{}
 
 	root.fileType = Directory
-	// TODO 访问控制如何调整 就是一系列的ACLs 这个显然需要读取配置文件了
+	// TODO How to adjust access control is a series of ACLs, this obviously needs to read the configuration file
 
-	// 想来想去，如果把Chubby Cell的名字改成与leaderID，后面切主会比较麻烦，对于外界来说也不好调用
-	// 因为理想的调用方法是有一个DNS服务器，客户端可以使用名称来得到这个Cell的地址
-	// 此时直接取名就方便的多，TODO 后面这里还是要读一手配置文件
+	// After thinking about it, if the name of Chubby Cell is changed to the leaderID, it will be more troublesome to switch the master later, and it is not easy to call for the outside world
+	// Because the ideal calling method is to have a DNS server, the client can use the name to get the address of this Cell
+	// At this time, it is much more convenient to name it directly, TODO here still need to read a configuration file later
 	//root.fileName = "ChubbyCell_" + strconv.Itoa(int(leaderID))
 	root.fileName = "ChubbyCell_" + "lizhaolong"
 
-	// instanceseq与tokenseq的初始值是2，零设定为无效值,1为delete通知的成功值
+	// The initial value of instanceseq and tokenseq is 2, with zero as the invalid value and 1 as the delete notification success value
 	root.instanceSeq = 2
 	root.tokenSeq = 2
 	root.aCLsSeq = 0
@@ -420,17 +328,17 @@ func InitRoot() *FileSystemNode {
 
 	root.nowLockType = NotLock
 	root.readLockReferenceCount = 0
-	root.nowPath = "/ls/" + root.fileName // 所有Cell的根均为ls(lock server),这是一个虚拟的根
+	root.nowPath = "/ls/" + root.fileName // The root of all Cells is ls (lock server), which is a virtual root
 	root.next = make(map[string]*FileSystemNode)
 	root.nextNameCache = make(map[string]uint64)
 
-	/*	log.Printf("目前的路径名 : %s\n", root.nowPath)
+	/*	log.Printf("Current path name : %s\n", root.nowPath)
 		RootFileOperation.pathToFileSystemNodePointer[root.nowPath] = root*/
 
 	return root
 }
 
-func (Fsn *FileSystemNode) CheckToken(token uint64, filename string) error{
+func (Fsn *FileSystemNode) CheckToken(token uint64, filename string) error {
 	Node, IsExist := Fsn.next[filename]
 
 	if !IsExist {
@@ -438,7 +346,7 @@ func (Fsn *FileSystemNode) CheckToken(token uint64, filename string) error{
 		return ChubbyGoFileSystemError(PathError)
 	}
 
-	if Node.tokenSeq == token{
+	if Node.tokenSeq == token {
 		return nil
 	} else {
 		return ChubbyGoFileSystemError(TokenSeqError)
@@ -446,7 +354,7 @@ func (Fsn *FileSystemNode) CheckToken(token uint64, filename string) error{
 }
 
 /*
- * @brief: Debug用,显示当前目录树的全部文件名
+ * @brief: For debugging, display the names of all files in the current directory tree
  */
 func RecursionDisplay(Fsn *FileSystemNode) {
 	fmt.Println(Fsn.nowPath)
@@ -456,7 +364,7 @@ func RecursionDisplay(Fsn *FileSystemNode) {
 }
 
 /*
- * @brief: Debug用,输出间隔符号
+ * @brief: For debugging, output interval symbols
  */
 func IntervalDisPlay() {
 	fmt.Println("----------------------------------")

@@ -13,12 +13,12 @@
  * limitations under the License.
  */
 
-/* Code comment are all encoded in UTF-8.*/
+/* Code comments are all encoded in UTF-8.*/
 
 /*
- * @brief: 这个功能的作用是支持秒杀，比如只有100件商品，客户端只需要执行原子递减(flag为2,new为1,old为0)就可以了。基础的逻辑是客户端发送一个key值，当然value必须可以由字符串转化为数字。
+ * @brief: The function of this feature is to support flash sales, for example, there are only 100 items, and the client only needs to perform atomic decrement (flag is 2, new is 1, old is 0). The basic logic is that the client sends a key value, and of course the value must be convertible to a number.
  * @param: key; old; new; flag;
- * @notes: flag为1则为正常CAS操作;flag为2则为递减new,最小为old;flag为4则为递增new,最大为old;
+ * @notes: flag is 1 for normal CAS operation; flag is 2 for decrementing new, minimum is old; flag is 4 for incrementing new, maximum is old;
  */
 
 package BaseServer
@@ -30,19 +30,18 @@ import (
 	"time"
 )
 
-const(
+const (
 	Cas = 1
 	Add = 2
 	Sub = 4
 )
 
-
 /*
- * @brief: CAS操作只有在key对应的value值为数字时才有效
+ * @brief: CAS operation is only valid when the value corresponding to the key is a number
  */
 func (kv *RaftKV) CompareAndSwap(args *CompareAndSwapArgs, reply *CompareAndSwapReply) error {
-	// 本端还没有与其他服务器连接成功
-	if atomic.LoadInt32(kv.ConnectIsok) == 0{
+	// This end has not yet successfully connected to other servers
+	if atomic.LoadInt32(kv.ConnectIsok) == 0 {
 		reply.Err = ConnectError
 		return nil
 	}
@@ -54,59 +53,59 @@ func (kv *RaftKV) CompareAndSwap(args *CompareAndSwapArgs, reply *CompareAndSwap
 
 	var ValueOfKey string
 
-	// 如果找到键放在OldValue中，找不到直接返回
+	// If the key is found, put it in OldValue, if not, return directly
 	if value, ok := kv.KvDictionary.ChubbyGoMapGet(args.Key); ok {
 		ValueOfKey = value
 	} else {
-		reply.Err = ErrNoKey	// 其实还可能是其他错误原因，详情请见ChubbyGoMapGet
+		reply.Err = ErrNoKey // There may actually be other error reasons, see ChubbyGoMapGet for details
 		return nil
 	}
 
-	// 这一步确保了value可以转换为数字,并赋值给NowValue
+	// This step ensures that the value can be converted to a number and assigned to NowValue
 	NowValue, err := strconv.Atoi(ValueOfKey)
 	if err != nil {
 		reply.Err = ValueCannotBeConvertedToNumber
 		return nil
 	}
 
-	// 当interval为零的时候默认为一般的CAS操作，比较失败以后不再尝试进行递减
+	// When interval is zero, it defaults to a normal CAS operation, and no further attempts are made to decrement after comparison failure
 	NewOperation := CASOp{Key: args.Key, ClientID: args.ClientID, Clientseq: args.SeqNo, Interval: args.New}
 
-	// 这里的old,new不一定是正确的;那么为什么要在这里进行计算呢，原因是减少守护进程临界区的计算量
-	if args.Flag & 1 != 0{	// CAS
+	// The old and new here are not necessarily correct; so why calculate here? The reason is to reduce the calculation in the critical section of the daemon
+	if args.Flag&1 != 0 { // CAS
 		NewOperation.Old = strconv.Itoa(args.Old)
 		NewOperation.New = strconv.Itoa(args.New)
-		NewOperation.Interval = 0	// CAS时为零，其他时候都是args.new
-	} else if args.Flag & 2 != 0{	// ADD
+		NewOperation.Interval = 0 // Zero for CAS, args.new for other times
+	} else if args.Flag&2 != 0 { // ADD
 		rhs := args.Old
-		if NowValue + args.New > rhs{
+		if NowValue+args.New > rhs {
 			reply.Err = CurrentValueExceedsExpectedValue
 			return nil
 		}
 		NewOperation.Old = strconv.Itoa(NowValue)
 		NewOperation.New = strconv.Itoa(NowValue + args.New)
 		NewOperation.boundary = rhs
-	} else if args.Flag & 4 != 0{	// SUB
+	} else if args.Flag&4 != 0 { // SUB
 		lhs := args.Old
-		if NowValue - args.New < lhs{
+		if NowValue-args.New < lhs {
 			reply.Err = CurrentValueExceedsExpectedValue
 			return nil
 		}
 		NewOperation.Old = strconv.Itoa(NowValue)
 		NewOperation.New = strconv.Itoa(NowValue - args.New)
 		NewOperation.boundary = lhs
-	} else {	// Undefined behavior
-		log.Printf("ERROR : [%d] CompareAndSwap exhibits undefined behavior.\n",kv.me)
+	} else { // Undefined behavior
+		log.Printf("ERROR : [%d] CompareAndSwap exhibits undefined behavior.\n", kv.me)
 		reply.Err = CASFlagUndefined
 		return nil
 	}
 
-	// 运行在此时old,与new是有效的,但是不一定最终获取有效。在守护进程中我们先进行比较，CAS，失败以后再查看边界值进行计算，以此保证ADD和SUB的有效性
+	// At this point, old and new are valid, but not necessarily ultimately valid. In the daemon, we first compare, CAS, and then check the boundary value for calculation if it fails, to ensure the validity of ADD and SUB
 
 	Notice := make(chan struct{})
 
 	log.Printf("INFO : ClientId[%d], CompareAndSwap:key(%s), oldvalue(%s), newvalue(%s)\n",
-		args.ClientID,args.Key, NewOperation.Old, NewOperation.New)
+		args.ClientID, args.Key, NewOperation.Old, NewOperation.New)
 
 	kv.mu.Lock()
 	if dup, ok := kv.ClientSeqCache[int64(args.ClientID)]; ok {
@@ -138,12 +137,12 @@ func (kv *RaftKV) CompareAndSwap(args *CompareAndSwapArgs, reply *CompareAndSwap
 			return nil
 		}
 
-		flag := <- kv.CASNotice[args.ClientID]
+		flag := <-kv.CASNotice[args.ClientID]
 
 		if flag {
-			reply.Err = OK	// 已经按照收到的请求在字典中完成更新了
+			reply.Err = OK // The update has been completed in the dictionary according to the received request
 		} else {
-			reply.Err = CASFailture // 由于各种原因CAS失败
+			reply.Err = CASFailture // CAS failed for various reasons
 		}
 
 	}
@@ -152,15 +151,15 @@ func (kv *RaftKV) CompareAndSwap(args *CompareAndSwapArgs, reply *CompareAndSwap
 }
 
 /*
- * @brief: 提供一个功能更加丰富的CAS操作,见文件顶.
- * @notes: 操作要求key对应的值必须是数字，且现在其实没有做什么保护机制，也就是CAS操作的对象可能随时被修改成不是数字的值，这样就没办法了。
- * TODO 这是后面权限的一个考虑点。
+ * @brief: Provides a more feature-rich CAS operation, see the top of the file.
+ * @notes: The operation requires that the value corresponding to the key must be a number, and there is actually no protection mechanism now, which means that the object of the CAS operation may be modified to a non-numeric value at any time, so there is no way.
+ * TODO This is a consideration for permissions later.
  */
-func (ck *Clerk) CompareAndSwap(Key string, Old int, New int, Flag int) bool{
+func (ck *Clerk) CompareAndSwap(Key string, Old int, New int, Flag int) bool {
 	cnt := len(ck.servers)
 
 	for {
-		args := &CompareAndSwapArgs{ClientID: ck.ClientID, SeqNo: ck.seq, Key : Key, Old: Old, New: New, Flag: Flag}
+		args := &CompareAndSwapArgs{ClientID: ck.ClientID, SeqNo: ck.seq, Key: Key, Old: Old, New: New, Flag: Flag}
 
 		reply := new(CompareAndSwapReply)
 
@@ -189,8 +188,8 @@ func (ck *Clerk) CompareAndSwap(Key string, Old int, New int, Flag int) bool{
 				ck.seq++
 				return true
 			} else if reply.Err == CurrentValueExceedsExpectedValue || reply.Err == CASFlagUndefined ||
-				 reply.Err == ValueCannotBeConvertedToNumber || reply.Err == CASFailture  || reply.Err == Duplicate{
-				// 对端CAS失败，错误类型为返回值
+				reply.Err == ValueCannotBeConvertedToNumber || reply.Err == CASFailture || reply.Err == Duplicate {
+				// The other end CAS failed, the error type is the return value
 				// log.Printf("INFO : CAS error key(%s) old(%d) new(%d) -> [%s]\n", Key, Old, New, reply.Err)
 				ck.seq++
 				return false

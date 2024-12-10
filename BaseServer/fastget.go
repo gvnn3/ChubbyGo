@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-/* Code comment are all encoded in UTF-8.*/
+/* Code comments are all encoded in UTF-8.*/
 
 package BaseServer
 
@@ -24,8 +24,8 @@ import (
 )
 
 /*
- * @brief: FastGet请求不提供一致性保证，直接从主服务器的的字典中取值，不经过raft层;
- * @notes: FastGet请求适合客户端对一个特定的键修改以后很长时间不会修改，所有客户端可以直接get，此时fastget效率最高
+ * @brief: FastGet request does not provide consistency guarantee, directly fetches value from the main server's dictionary, bypassing the raft layer;
+ * @notes: FastGet request is suitable for clients that do not modify a specific key for a long time after modifying it, so all clients can directly get it. In this case, fastget is the most efficient.
  */
 
 func (ck *Clerk) FastGet(key string) string {
@@ -38,7 +38,7 @@ func (ck *Clerk) FastGet(key string) string {
 		ck.leader %= serverLength
 		if atomic.LoadInt32(&((*ck.serversIsOk)[ck.leader])) == 0 {
 			ck.leader++
-			continue // 不能连接就切换
+			continue // Switch if cannot connect
 		}
 
 		replyArrival := make(chan bool, 1)
@@ -59,13 +59,13 @@ func (ck *Clerk) FastGet(key string) string {
 						ck.ClientID, reply.Err, reply.Value)
 					ck.seq++
 					return reply.Value
-				} else if reply.Err == ReElection || reply.Err == NoLeader { // 这两种情况我们需要重新发送请求 即重新选择主
+				} else if reply.Err == ReElection || reply.Err == NoLeader { // In these two cases, we need to resend the request, i.e., reselect the leader
 					ck.leader++
 				}
 			} else {
 				ck.leader++
 			}
-		case <-time.After(200 * time.Millisecond): // RPC超过200ms以后直接切服务器 一般来说信道没有问题200ms绝对够用
+		case <-time.After(200 * time.Millisecond): // If RPC exceeds 200ms, switch server. Generally speaking, 200ms is definitely enough if there is no issue with the channel.
 			ck.leader++
 		}
 	}
@@ -73,20 +73,20 @@ func (ck *Clerk) FastGet(key string) string {
 }
 
 func (kv *RaftKV) FastGet(args *GetArgs, reply *GetReply) error {
-	if atomic.LoadInt32(kv.ConnectIsok) == 0{
+	if atomic.LoadInt32(kv.ConnectIsok) == 0 {
 		reply.Err = ConnectError
 		return nil
 	}
 
-	// 当前已经不是leader了，自然立马返回
+	// If not the leader anymore, return immediately
 	if _, isLeader := kv.rf.GetState(); !isLeader {
 		reply.Err = NoLeader
 		return nil
 	}
 
-	log.Printf("INFO : ClientId[%d], FastGET:key(%s)\n", args.ClientID,args.Key)
+	log.Printf("INFO : ClientId[%d], FastGET:key(%s)\n", args.ClientID, args.Key)
 
-	// 可以看到这个锁仍然是瓶颈
+	// This lock is still a bottleneck
 	kv.mu.Lock()
 	if dup, ok := kv.ClientSeqCache[int64(args.ClientID)]; ok {
 		if args.SeqNo <= dup.Seq {
@@ -105,7 +105,7 @@ func (kv *RaftKV) FastGet(args *GetArgs, reply *GetReply) error {
 		reply.Value = value
 	} else {
 		reply.Err = ErrNoKey
-		reply.Value = "" // 这样写client.go可以少一个条件语句
+		reply.Value = "" // This way client.go can have one less conditional statement
 	}
 
 	return nil

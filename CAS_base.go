@@ -8,10 +8,10 @@ import (
 	"log"
 )
 
-// 测试CAS操作的基础功能，分别为正常CAS，指定边界和跨度的递增和递减。
+// Test the basic functions of CAS operations, including normal CAS, increment and decrement with specified boundaries and spans.
 
 func main() {
-	n := 10 // n大于零
+	n := 10 // n greater than zero
 	Sem := make(Connect.Semaphore, n-1)
 	SemNumber := 0
 
@@ -26,63 +26,63 @@ func main() {
 		}
 	}
 
-	// 秒杀时一个标准的计数器创建方法
+	// A standard counter creation method during a flash sale
 	clientConfigs[0].Put("lizhaolong", "8")
 
-	log.Println("开始递减CAS操作.")
+	log.Println("Starting decrement CAS operation.")
 
-	// 有一个协程会运行失败
+	// One goroutine will fail
 	for i := 1; i < n; i++ {
 		SemNumber++
 		go func(index int) {
 			defer Sem.P(1)
-			// 对键为"lizhaolong"的值在大于old(0)时进行递减，每次递减New(1)，
+			// Decrement the value of the key "lizhaolong" when it is greater than old(0), decrement by New(1) each time,
 			ok := clientConfigs[index].CompareAndSwap("lizhaolong", 0, 1, BaseServer.Sub)
 			if ok {
-				fmt.Printf("递减 index[%d] CAS sucessful.\n",index)
+				fmt.Printf("Decrement index[%d] CAS successful.\n", index)
 			} else {
-				fmt.Printf("递减 index[%d] CAS failture.\n",index)
+				fmt.Printf("Decrement index[%d] CAS failure.\n", index)
 			}
 		}(i)
 	}
 
 	Sem.V(SemNumber)
 
-	log.Println("开始递增CAS操作.")
+	log.Println("Starting increment CAS operation.")
 	SemNumber = 0
 
-	// 一个协程会递增失败
+	// One goroutine will fail to increment
 	for i := 1; i < n; i++ {
 		SemNumber++
 		go func(index int) {
 			defer Sem.P(1)
-			// 对键为"lizhaolong"的值在小于old(8)时进行递增，每次递增new(1)，
+			// Increment the value of the key "lizhaolong" when it is less than old(8), increment by new(1) each time,
 			ok := clientConfigs[index].CompareAndSwap("lizhaolong", 8, 1, BaseServer.Add)
 			if ok {
-				fmt.Printf("递增 index[%d] CAS sucessful.\n",index)
+				fmt.Printf("Increment index[%d] CAS successful.\n", index)
 			} else {
-				fmt.Printf("递增 index[%d] CAS failture.\n",index)
+				fmt.Printf("Increment index[%d] CAS failure.\n", index)
 			}
 		}(i)
 	}
 
 	Sem.V(SemNumber)
 
-	log.Println("开始正常CAS操作.")
+	log.Println("Starting normal CAS operation.")
 
 	SemNumber = 0
 
-	// 只有一个线程可以执行成功
-	for i := 1; i < n; i++{
+	// Only one thread can execute successfully
+	for i := 1; i < n; i++ {
 		SemNumber++
 		go func(index int) {
 			defer Sem.P(1)
-			// 如果旧值是old(8)，便替换为New(10)
+			// If the old value is old(8), replace it with New(10)
 			ok := clientConfigs[index].CompareAndSwap("lizhaolong", 8, 10, BaseServer.Cas)
 			if ok {
-				fmt.Printf("正常CAS index[%d] CAS sucessful.\n",index)
+				fmt.Printf("Normal CAS index[%d] CAS successful.\n", index)
 			} else {
-				fmt.Printf("正常CAS index[%d] CAS failture.\n",index)
+				fmt.Printf("Normal CAS index[%d] CAS failure.\n", index)
 			}
 		}(i)
 	}
@@ -91,6 +91,6 @@ func main() {
 
 	res := clientConfigs[0].Get("lizhaolong")
 
-	// 应该得到10
+	// Should get 10
 	fmt.Printf("res : %s.\n", res)
 }

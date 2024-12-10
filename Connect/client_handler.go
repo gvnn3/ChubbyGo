@@ -29,12 +29,12 @@ import (
 )
 
 type ClientConfig struct {
-	servers        []*rpc.Client     // 表示其他几个服务器的连接句柄
-	serversIsOk    []int32           // 表示哪些服务器此时可以连接
-	clk            *BaseServer.Clerk // 一个客户端的实体
-	nservers       int               // 连接的服务器数
-	ServersAddress []string          `json:"client_address"` // 从配置文件中读取服务器的地址
-	Maxreries      int               `json:"maxreries"`      // 超时重连最大数
+	servers        []*rpc.Client     // Represents the connection handles of several other servers
+	serversIsOk    []int32           // Indicates which servers can be connected at this time
+	clk            *BaseServer.Clerk // An entity of a client
+	nservers       int               // Number of connected servers
+	ServersAddress []string          `json:"client_address"` // Read server addresses from the configuration file
+	Maxreries      int               `json:"maxreries"`      // Maximum number of timeout reconnections
 }
 
 func CreateClient() *ClientConfig {
@@ -44,80 +44,80 @@ func CreateClient() *ClientConfig {
 }
 
 /*
- * @brief: 拿到其他服务器的地址，分别建立RPC连接
- * @return: 三种返回类型：超时;HttpError;成功
- * @notes: 	客户端也采取重传是因为担心在服务部署的时候直接连接导致失败;可能服务器集群此时运行时不足N个，但是仍在提供服务，所以这里逻辑与服务器并不一样
+ * @brief: Get the addresses of other servers and establish RPC connections respectively
+ * @return: Three return types: timeout; HttpError; success
+ * @notes: The client also adopts retransmission because it is worried that direct connection will fail when the service is deployed; it is possible that the server cluster is not running enough N at this time, but it is still providing services, so the logic here is different from the server
  */
 
 /*
- * 10月23日: 以下问题已修改
- * 测试的时候发现一个问题，就是当三台服务器宕机一台的时候，客户端这么写就连接不上了，所以需要修改这里，使得多于N/2的时候可以连接成功，小于的时候服务已经下线，不必连接。
- * 这个问题并不简单，因为如果在connectAll中没有连接，到了客户端代码中又要一直操作，这势必是要加锁的。我们可以引入一个标记map标记peers的哪一项可以使用，
- * ConnectAll中在客户端服务已经启动以后还在与未连接的服务器尝试连接，连接成功以后就要修改map，使客户端代码可以连接这个新的服务器，
- * 这个map是ClientConfig和Clerk应该是共享的。‘
- * 这样看来在客户端必须一直尝试重新连接服务器，而不是和服务器一样的倍增，因为失败以后客户端不会再重连了，这与预期不符
- * 暂时不动这里，因为服务器没有宕机时连接是ok的，先把测试代码过了以后再优化这里，防止这里出错导致排错困难
+ * October 23: The following issues have been fixed
+ * During testing, a problem was found. When one of the three servers crashes, the client cannot connect in this way, so it needs to be modified here so that it can connect successfully when more than N/2, and the service is already offline when it is less than that, so there is no need to connect.
+ * This problem is not simple, because if there is no connection in connectAll, the client code will always operate, which must be locked. We can introduce a flag map to mark which items of peers can be used,
+ * In ConnectAll, after the client service has started, it is still trying to connect to the unconnected server. After the connection is successful, the map needs to be modified so that the client code can connect to this new server,
+ * This map should be shared by ClientConfig and Clerk.‘
+ * It seems that the client must always try to reconnect to the server, rather than doubling like the server, because the client will not reconnect after failure, which is inconsistent with expectations
+ * Temporarily do not move here, because the connection is ok when the server is not down, first pass the test code and then optimize here to prevent errors here from causing difficult troubleshooting
  */
 
 /*
- * 1. 最终决定使用一组数字来判断哪些peers可以重连，因为每一项peer最多只会被修改一次，
- * 对于peer的使用来说 一般这样使用
+ * 1. Finally decided to use a set of numbers to determine which peers can be reconnected, because each peer will only be modified once at most,
+ * For the use of peer, it is generally used like this
  * if atomic.load(flag) == 1{
  *	  peer.call
  * }
- * 当判断为false的时候不会操作，为true的时候peer已经可以操作了
- * 2. 目前对于宕机服务器的态度就是重连，但是这是基于大多数服务器已经连接成功以后，我们可以随意重连，
- * 3. 问题的关键在于可能大多数机器无法连接成功，此时全部的连接都应该断掉，并直接退出。
- * 	  假设有三台服务器，目前成功连接一台，那么此时会阻塞，等待连接成功，但其实我们这个时候没办法知道这两个服务器什么时候能够连接成功
- *    那么我们只能预测了。暂定的解决方案是两台服务器重试Maxreries次，肯定有一台先重试完，继续重试，但做一个标记。
- *    等到第二台机器也重试了Maxreries次以后两台一起退出，同时关闭已连接成功的那台服务器。如果中间有一台成功，那么客户端开始服务，此时剩下一台应该不停的重连
+ * When judged to be false, it will not operate. When it is true, the peer can already operate
+ * 2. At present, the attitude towards downed servers is to reconnect, but this is based on the fact that most servers have been successfully connected, we can reconnect at will,
+ * 3. The key to the problem is that most machines may not be able to connect successfully. At this time, all connections should be disconnected and exit directly.
+ * 	  Suppose there are three servers, and one is successfully connected at present. At this time, it will block and wait for the connection to succeed, but in fact, we cannot know when these two servers can be successfully connected at this time.
+ *    Then we can only predict. The tentative solution is to retry Maxreries times for two servers. There must be one that retries first and continues to retry, but make a mark.
+ *    When the second machine also retries Maxreries times, the two will exit together and close the successfully connected server at the same time. If one is successful in the middle, the client starts to serve, and the remaining one should keep reconnecting
  */
 
-// TODO 这个函数的功能集成的太过于复杂，不过目前看来没有什么好的办法
+// TODO This function is too complex, but there seems to be no better way at the moment
 func (cfg *ClientConfig) connectAll() error {
 
 	sem := make(Semaphore, cfg.nservers-1)
 	sem_number := 0
-	var HTTPError int32 = 0                        // HTTPError可能出现的次数
-	var TimeOut []int                              // 超时的服务器数量
-	var TimeoutMutex sync.Mutex                    // 保护Timeout
-	var SucessConnect int32 = 0                    // 在此函数运行期间成功连接数，显然大于等于target才会退出
-	var StartServer uint32 = 0                     // 用于此函数退出以后仍在运行的协程，当值大于0时永久运行
-	servers_length := len(cfg.ServersAddress)      // 需要连接的服务器数
-	var target int32 = int32(servers_length/2 + 1) // 在 target个服务器连接成功时结束
+	var HTTPError int32 = 0                        // Possible number of HTTPError occurrences
+	var TimeOut []int                              // Number of timed-out servers
+	var TimeoutMutex sync.Mutex                    // Protect Timeout
+	var SucessConnect int32 = 0                    // Number of successful connections during the execution of this function, obviously greater than or equal to target to exit
+	var StartServer uint32 = 0                     // For goroutines still running after this function exits, when the value is greater than 0, it runs permanently
+	servers_length := len(cfg.ServersAddress)      // Number of servers to connect
+	var target int32 = int32(servers_length/2 + 1) // End when target servers are successfully connected
 
-	//用于判断是否超过每一项是否超过Maxreries,其实可以复用cfg.serversIsOk,因为每一项不冲突,但是我觉得功能划分清楚一点比较好
-	PeerExceedMaxreries := make([]bool, servers_length) // 记录重传超过Maxreries次的服务器的个数
+	// Used to determine whether each item exceeds Maxreries, in fact, cfg.serversIsOk can be reused, because each item does not conflict, but I think it is better to divide the functions clearly
+	PeerExceedMaxreries := make([]bool, servers_length) // Record the number of servers that have retransmitted more than Maxreries times
 
 	for i := 0; i < servers_length; i++ {
-		if atomic.LoadInt32(&HTTPError) > 0 { // TODO 此版本仍然不忍耐这种错误，后面尝试如何复现这种错误
+		if atomic.LoadInt32(&HTTPError) > 0 { // TODO This version still does not tolerate this error, try to reproduce this error later
 			break
 		}
 		client, err := rpc.DialHTTP("tcp", cfg.ServersAddress[i])
 		/*
-		 * 这里返回值有三种情况:
-		 * net.Dial返回error			： 重连
-		 * http.ReadResponse返回		： HTTP报错
-		 * 正常返回
+		 * There are three return situations here:
+		 * net.Dial returns error: reconnect
+		 * http.ReadResponse returns: HTTP error
+		 * Normal return
 		 */
 		if err != nil {
 			switch err.(type) {
-			case *net.OpError: // 与库实现挂钩 不同步版本的标准库实现这里可能需要改动
+			case *net.OpError: // Hooked with library implementation, may need to be modified here for different versions of the standard library
 				sem_number++
-				// 这里的重连与服务器不一样，我们需要在至少连接n/2+1时不停的重连，如果没有到达n/2+1超时的话则需要退出
+				// The reconnection here is different from the server. We need to keep reconnecting when at least n/2+1 is connected. If it times out without reaching n/2+1, we need to exit
 				go func(index int) {
 					defer sem.P(1)
 					number := 0
 					Timeout := 0
-					// StartServer被设置为1的时候就不再看第二个判断条件了，当大多数服务器连接成功的时候StartServer被设置为1
+					// When StartServer is set to 1, the second judgment condition is no longer considered. When most servers are successfully connected, StartServer is set to 1
 					for atomic.LoadUint32(&StartServer) >= 1 || number <= cfg.Maxreries {
 
 						if atomic.LoadInt32(&HTTPError) > 0 {
 							return
 						}
 
-						// 至少target台服务器都经历过Maxreries次的重传
-						// 可能一台服务器重试Maxreries以后重连成功，其他服务器接下来会无线重连，应该加上对StartServer的判断
+						// At least target servers have experienced Maxreries retransmissions
+						// It is possible that one server retries Maxreries and then reconnects successfully, and other servers will retry indefinitely, so the judgment of StartServer should be added
 						if atomic.LoadUint32(&StartServer) == 0 && judgeTrueNumber(PeerExceedMaxreries) >= target {
 							break
 						}
@@ -127,7 +127,7 @@ func (cfg *ClientConfig) connectAll() error {
 						number++
 						if number >= cfg.Maxreries {
 							number = 0
-							// 不使用一个int32的原因是可能极端情况一个服务器重试了两遍Maxreries,也会退出
+							// The reason for not using an int32 is that in extreme cases, a server retries twice Maxreries and will also exit
 							PeerExceedMaxreries[index] = true
 						}
 						Timeout = ReturnInterval(number)
@@ -138,7 +138,7 @@ func (cfg *ClientConfig) connectAll() error {
 						if err != nil {
 							switch err.(type) {
 							case *net.OpError:
-								// 继续循环就ok
+								// Just continue the loop
 								continue
 							default:
 								atomic.AddInt32(&HTTPError, 1)
@@ -146,19 +146,19 @@ func (cfg *ClientConfig) connectAll() error {
 							}
 						} else {
 							// cfg.mu.Lock()
-							// defer cfg.mu.Unlock()	// 没有协程会碰这个
-							cfg.servers[index] = TempClient             // 顺序不能错，不能放到下面那一句的后面
-							atomic.AddInt32(&cfg.serversIsOk[index], 1) // 客户端可能已经开始服务了，这个函数还在运行，所以要原子
+							// defer cfg.mu.Unlock()	// No goroutine will touch this
+							cfg.servers[index] = TempClient             // The order cannot be wrong, cannot be placed after the next line
+							atomic.AddInt32(&cfg.serversIsOk[index], 1) // The client may have already started serving, so this function is still running, so it must be atomic
 							atomic.AddInt32(&SucessConnect, 1)
-							log.Printf("与%d 连接成功\n", cfg.ServersAddress[i])
+							log.Printf("Successfully connected to %d\n", cfg.ServersAddress[i])
 							return
 						}
 					}
-					// 只有循环cfg.maxreries遍没有结果以后才会跑到这里
-					// 也就是连接超时
+					// Only after looping cfg.maxreries times without result will it run here
+					// That is, connection timeout
 					TimeoutMutex.Lock()
 					defer TimeoutMutex.Unlock()
-					TimeOut = append(TimeOut, index) // 为了方便打日志
+					TimeOut = append(TimeOut, index) // For easy logging
 					return
 				}(i)
 				continue
@@ -167,23 +167,23 @@ func (cfg *ClientConfig) connectAll() error {
 			}
 		} else {
 			atomic.AddInt32(&SucessConnect, 1)
-			atomic.AddInt32(&cfg.serversIsOk[i], 1) // 标记这个peer可以连接
-			log.Printf("与%d 连接成功\n", cfg.ServersAddress[i])
+			atomic.AddInt32(&cfg.serversIsOk[i], 1) // Mark this peer as connectable
+			log.Printf("Successfully connected to %d\n", cfg.ServersAddress[i])
 			cfg.servers[i] = client
 		}
 	}
 
 	if atomic.LoadInt32(&SucessConnect) < target {
-		// 这里并没有条件竞争，因为SucessConnect只可能变大，这里在最差情况是target - SucessConnect小于零，这也没有什么关系
-		sem.V(int(target - atomic.LoadInt32(&SucessConnect))) // 只要到达这个数，证明服务器集群已经可以提供服务,其他几个协程仍在连接中
+		// There is no race condition here because SucessConnect can only increase, the worst case here is target - SucessConnect is less than zero, which does not matter
+		sem.V(int(target - atomic.LoadInt32(&SucessConnect))) // As long as this number is reached, it proves that the server cluster can already provide services, and other goroutines are still connecting
 	}
 
 	TimeOutLength := len(TimeOut)
-	if atomic.LoadInt32(&HTTPError) > 0 || TimeOutLength > 0 { // 失败以后释放连接
+	if atomic.LoadInt32(&HTTPError) > 0 || TimeOutLength > 0 { // Release connection after failure
 		log.Println("159 : ", atomic.LoadInt32(&HTTPError), TimeOutLength)
 		for i := 0; i < servers_length; i++ {
 			if atomic.LoadInt32(&(cfg.serversIsOk[i])) == 1 {
-				cfg.servers[i].Close() // 连接成功的进行close
+				cfg.servers[i].Close() // Close successfully connected connections
 			}
 		}
 		if TimeOutLength > 0 {
@@ -191,14 +191,14 @@ func (cfg *ClientConfig) connectAll() error {
 		}
 		return ErrorInConnectAll(http_error)
 	} else {
-		atomic.AddUint32(&StartServer, 1) // 代表后面的重连都是无限重连
-		return nil                        // 没有发生任何错误 成功
+		atomic.AddUint32(&StartServer, 1) // Represents that subsequent reconnections are infinite reconnections
+		return nil                        // No errors occurred, success
 	}
 }
 
 /*
- * @brief: 用于判断此时已经重连Maxreries的协程数，在超过阈值的时候直接退出，error为超时
- * @return: 返回数组中true的个数
+ * @brief: Used to determine the number of goroutines that have reconnected Maxreries at this time, and exit directly when the threshold is exceeded, error is timeout
+ * @return: Returns the number of trues in the array
  */
 func judgeTrueNumber(array []bool) int32 {
 	arrayLength := len(array)
@@ -212,20 +212,20 @@ func judgeTrueNumber(array []bool) int32 {
 }
 
 /*
- * @brief: 再调用这个函数的时候开始服务,
- * @return: 三种返回类型：路径解析错误;connectAll连接出现问题;成功
+ * @brief: Start the service when calling this function,
+ * @return: Three return types: path parsing error; connectAll connection problem; success
  */
 func (cfg *ClientConfig) StartClient() error {
 	var flag bool = false
 	if len(ClientListeners) == 1 {
-		// 正确读取配置文件
+		// Correctly read the configuration file
 		flag = ClientListeners[0]("Config/client_config.json", cfg)
 		if !flag {
 			log.Println("File parser Error!")
 			return ErrorInStartServer(parser_error)
 		}
 
-		// 从json中取出的字段格式错误
+		// Field format error extracted from json
 		if ParserErr := cfg.checkJsonParser(); ParserErr != nil {
 			log.Println(ParserErr.Error())
 			return ErrorInStartServer(parser_error)
@@ -236,7 +236,7 @@ func (cfg *ClientConfig) StartClient() error {
 		cfg.serversIsOk = make([]int32, cfg.nservers)
 	} else {
 		log.Println("ClientListeners Error!")
-		// 这种情况只有在调用服务没有启动read_client_config.go的init函数时会出现
+		// This situation only occurs when the service is called without starting the init function of read_client_config.go
 		return ErrorInStartServer(Listener_error)
 	}
 
@@ -249,19 +249,19 @@ func (cfg *ClientConfig) StartClient() error {
 }
 
 /*
- * @brief: 检查从json中解析的字段是否符合规定
- * @return: 解析正确返回true,错误为false
+ * @brief: Check whether the fields parsed from json meet the requirements
+ * @return: Return true if the parsing is correct, false if there is an error
  */
 func (cfg *ClientConfig) checkJsonParser() error {
-	// 当配置数小于7的时候，留给其他服务器启动的时间太少，只有八秒左右的时间
-	// 这个值同样定义了客户端连接超时时间
+	// When the configuration number is less than 7, the time left for other servers to start is too short, only about eight seconds
+	// This value also defines the client connection timeout
 	if cfg.Maxreries <= 7 {
 		return ErrorInParserConfig(maxreries_to_small)
 	}
 
 	ServerAddressLength := len(cfg.ServersAddress)
 
-	if ServerAddressLength <= 2 { // 至少三台，客户端不需要计算自己
+	if ServerAddressLength <= 2 { // At least three, the client does not need to calculate itself
 		return ErrorInParserConfig(serveraddress_length_to_small)
 	}
 
@@ -275,7 +275,7 @@ func (cfg *ClientConfig) checkJsonParser() error {
 }
 
 // --------------------------
-// DEBUG用的两个函数,发现雪花算法巨大的问题,同一进程内生成的一样,导致测试出现问题
+// Two functions for DEBUG, found a huge problem with the snowflake algorithm, generated the same within the same process, causing testing problems
 
 func (cfg *ClientConfig) GetUniqueFlake() uint64 {
 	return cfg.clk.ClientID
@@ -317,7 +317,7 @@ func (cfg *ClientConfig) Acquire(fd *BaseServer.FileDescriptor, LockType int, Ti
 	index := strings.LastIndex(fd.PathName, "/")
 
 	RemainPath := fd.PathName[0:index]
-	if RemainPath == "/ls"{
+	if RemainPath == "/ls" {
 		log.Println("ERROR : Root node from every ChubbyGo cell can not be Acquired.")
 		return false, 0
 	}
@@ -331,8 +331,8 @@ func (cfg *ClientConfig) Release(fd *BaseServer.FileDescriptor, token uint64) bo
 }
 
 /*
- * @param: 给出文件名和手中持有的token，返回**此时刻**token是否有效
- * @brief: 可以传入绝对路径和相对路径，也不能叫相对路径
+ * @param: Give the file name and the token in hand, and return whether the token is valid at this moment
+ * @brief: Absolute paths and relative paths can be passed in, and it cannot be called relative paths
  */
 func (cfg *ClientConfig) CheckToken(AbsolutePath string, token uint64) bool {
 	index := strings.LastIndex(AbsolutePath, "/")
@@ -344,21 +344,21 @@ func (cfg *ClientConfig) CheckTokenAt(pathname string, filename string, token ui
 }
 
 /*
- * @brief: FastGet不提供任何一致性保证，适用于读极多写极少的情况，此时讲并发map的策略改为syncmap更优，性能可以提升百分之二十到三十
+ * @brief: FastGet does not provide any consistency guarantees, suitable for situations with many reads and few writes. At this time, changing the strategy of concurrent map to syncmap is more optimal, and performance can be improved by 20% to 30%
  */
 func (cfg *ClientConfig) FastGet(key string) string {
 	return cfg.clk.FastGet(key)
 }
 
 /*
- * @brief: 提供一个更为灵活的CAS操作，具体的定义见compareSwap.go文件首部
+ * @brief: Provide a more flexible CAS operation, the specific definition can be found at the beginning of compareSwap.go file
  */
 func (cfg *ClientConfig) CompareAndSwap(Key string, Old int, New int, Flag int) bool {
 	return cfg.clk.CompareAndSwap(Key, Old, New, Flag)
 }
 
 // --------------------------
-// 使用Listener模式避免/Connect和/Config的环状引用
+// Use Listener mode to avoid circular references between /Connect and /Config
 
 type ClientListener func(filename string, cfg *ClientConfig) bool
 

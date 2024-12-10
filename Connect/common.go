@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-/* Code comment are all encoded in UTF-8.*/
+/* Code comments are all encoded in UTF-8.*/
 
 package Connect
 
@@ -28,21 +28,21 @@ import (
 
 // -------------------------------------------
 
-// string转ytes
+// string to bytes
 func Str2sbyte(s string) (b []byte) {
-	*(*string)(unsafe.Pointer(&b)) = s                                                  // 把s的地址付给b
-	*(*int)(unsafe.Pointer(uintptr(unsafe.Pointer(&b)) + 2*unsafe.Sizeof(&b))) = len(s) // 修改容量为长度
+	*(*string)(unsafe.Pointer(&b)) = s                                                  // Assign the address of s to b
+	*(*int)(unsafe.Pointer(uintptr(unsafe.Pointer(&b)) + 2*unsafe.Sizeof(&b))) = len(s) // Modify capacity to length
 	return
 }
 
-// []byte转string
+// []byte to string
 func Sbyte2str(b []byte) string {
 	return *(*string)(unsafe.Pointer(&b))
 }
 
 // -------------------------------------------
 
-type ErrorInConnectAll int8 // 特用于connectAll的返回值 因为有三种错误 无法用bool表示
+type ErrorInConnectAll int8 // Specially used for the return value of connectAll because there are three types of errors that cannot be represented by bool
 
 const (
 	time_out = iota
@@ -66,7 +66,7 @@ func (err ErrorInConnectAll) Error() string {
 
 // -------------------------------------------
 
-type ErrorInStartServer int8 // 特用于StartServer与StartClient的返回值 因为有四种错误 无法用bool表示
+type ErrorInStartServer int8 // Specially used for the return value of StartServer and StartClient because there are four types of errors that cannot be represented by bool
 
 const (
 	parser_error = iota
@@ -148,22 +148,22 @@ func (err ErrorInParserConfig) Error() string {
 }
 
 /*
- * @brief: 解析MyPort
- * @return: 正确返回true；否则false
+ * @brief: Parse MyPort
+ * @return: Returns true if correct; otherwise false
  */
 func parserMyPort(MyPort string) bool {
-	if len(MyPort) < 0 { // 必须解析出来
+	if len(MyPort) < 0 { // Must be parsed
 		return false
 	}
 
 	var data []byte = Str2sbyte(MyPort)
 
-	if data[0] != ':' { // 第一位必须是':'
+	if data[0] != ':' { // The first character must be ':'
 		return false
 	}
 
 	var str string = string(data[1:])
-	// TODO tcp端口的数据类型是unsigned short，因此本地端口个数最大只有65536，可能未来需要修改
+	// TODO The data type of the tcp port is unsigned short, so the maximum number of local ports is only 65536, which may need to be modified in the future
 	if port, err := strconv.Atoi(str); err != nil || port > 65536 || port < 0 {
 		return false
 	}
@@ -171,32 +171,32 @@ func parserMyPort(MyPort string) bool {
 }
 
 /*
- * @brief: 解析从json提取出的ip地址项
- * @return: 正确返回true；否则false
- * @notes: net包的ip解析函数有点蛋疼,没办法解析"ip:port",只能解析"ip/port"，或者"ip"
+ * @brief: Parse the ip address item extracted from json
+ * @return: Returns true if correct; otherwise false
+ * @notes: The ip parsing function of the net package is a bit troublesome, it can only parse "ip/port" or "ip", not "ip:port"
  */
 func ParserIP(address string) bool {
 	data := Str2sbyte(address)
 	var index int = -1
-	for i := len(data) - 1; i >= 0; i-- { // 解析出最后一个‘:’
+	for i := len(data) - 1; i >= 0; i-- { // Parse out the last ':'
 		if data[i] == ':' {
 			index = i
 			break
 		}
 	}
-	if index == -1 { // 未解析出`:`
+	if index == -1 { // Failed to parse ':'
 		return false
 	}
 
 	ip := data[:index]
 	port := data[index+1:]
 
-	ParserRes := net.ParseIP(Sbyte2str(ip))                                // 解析ip "localhost"无法被ParseIP解析
-	if ParserRes == nil && strings.ToLower(Sbyte2str(ip)) != "localhost" { // 忽略大小写
+	ParserRes := net.ParseIP(Sbyte2str(ip))                                // Parse ip "localhost" cannot be parsed by ParseIP
+	if ParserRes == nil && strings.ToLower(Sbyte2str(ip)) != "localhost" { // Ignore case
 		return false
 	}
 
-	if po, err := strconv.Atoi(Sbyte2str(port)); err != nil || po > 65536 || po < 0 { // port解析失败或者范围错误
+	if po, err := strconv.Atoi(Sbyte2str(port)); err != nil || po > 65536 || po < 0 { // Port parsing failed or range error
 		return false
 	}
 
@@ -204,14 +204,14 @@ func ParserIP(address string) bool {
 }
 
 /*
- * @brief: 解析从json提取出的文件名
- * @return: 正确返回true；否则false,这里不区分各种错误类型
- * @notes: 一下根据机器不同可以配置,Golang我没有找到接口可以直接获得以下值,所以手动配置
- *	Linux下使用getconf PATH_MAX /usr 获取路径长度限制;4096
- * 	getconf NAME_MAX /usr 获取文件名称长度限制;255
- *	还有一点是我个人的要求,后缀必须是hdb,就是这么傲娇
- * 文件名的限制 : https://en.wikipedia.org/wiki/Filename
- * 目前搜到的文件名限制就是不允许采用"/"和" ",且"-"不能是第一个字符
+ * @brief: Parse the file name extracted from json
+ * @return: Returns true if correct; otherwise false, does not distinguish between various error types here
+ * @notes: The following can be configured according to different machines, I did not find an interface in Golang that can directly obtain the following values, so it is manually configured
+ *	Linux uses getconf PATH_MAX /usr to get the path length limit; 4096
+ * 	getconf NAME_MAX /usr to get the file name length limit; 255
+ *	Another point is my personal requirement, the suffix must be hdb, just so proud
+ * File name restrictions: https://en.wikipedia.org/wiki/Filename
+ * The current file name restrictions found are that "/" and " " are not allowed, and "-" cannot be the first character
  */
 func ParserFileName(pathname string) bool {
 	Length := len(pathname)
@@ -220,8 +220,8 @@ func ParserFileName(pathname string) bool {
 		return false
 	}
 
-	index1 := -1 // 标示后缀
-	index2 := 0  // 标示文件名
+	index1 := -1 // Indicates suffix
+	index2 := 0  // Indicates file name
 
 	for i := Length - 1; i >= 0; i-- {
 		if pathname[i] == '.' {
@@ -232,33 +232,33 @@ func ParserFileName(pathname string) bool {
 		}
 	}
 
-	// 不存在后缀
+	// No suffix
 	if index1 == -1 {
 		return false
 	}
 
-	// 检查后缀
+	// Check suffix
 	// a . h d b
 	// 0 1 2 3 4
 	if Length-index1 != 4 {
 		return false
-	} else { // 简单有效 不玩花的
+	} else { // Simple and effective, no fancy stuff
 		if pathname[index1+1] != 'h' || pathname[index1+2] != 'd' || pathname[index1+3] != 'b' {
 			return false
 		}
 	}
 
-	// 检查文件名; 255见函数注释
+	// Check file name; 255 see function comments
 	if index1-index2-1 > 255 {
 		return false
 	}
 
-	// TODO 目前只检查了最后一个文件名,在这里检测格式是为了早点检测出错误,因为打开这个文件时协议已经开始,会导致读取持久化数据失败;倒也可以使用默认文件
+	// TODO Currently only checking the last file name, detecting the format here is to detect errors earlier, because the protocol has already started when opening this file, which will cause persistent data reading to fail; it can also use the default file
 	if pathname[index2+1] == '-' {
 		return false
 	}
 
-	// 因为上面的解析过程这里面的数据不可能存在'/'，只需要检查' '就可以了
+	// Because of the above parsing process, there cannot be '/' in the data here, just check ' '.
 	for i := index2 + 1; i < index1; i++ {
 		if pathname[i] == ' ' {
 			return false
@@ -269,12 +269,12 @@ func ParserFileName(pathname string) bool {
 }
 
 /*
- * @brief: 李浩帮忙推出的服务器连接时间间隔函数
- * @return: 毫秒，调用方不用转换
- * @notes: TODO 目前看起来并不符合预期；后面可以再改，
+ * @brief: Server connection interval function proposed by Li Hao
+ * @return: Milliseconds, no need to convert by the caller
+ * @notes: TODO Currently it does not meet expectations; it can be modified later,
  */
 /*
- * @example: 0 	  695  893  1005 1083 	// 可以看出前几次重试斜率还是太陡峭，后面太过平缓
+ * @example: 0 	  695  893  1005 1083 	// It can be seen that the slope of the first few retries is still too steep, and the latter is too gentle
 			 1142 1190 1230 1265 1295
 			 1322 1347 1369 1389 1408
 			 1426 1442 1457 1472 1485
@@ -288,7 +288,7 @@ func ReturnInterval(n int) int {
 }
 
 /*
- * @brief: 解析文件中的持久化策略是否正确,目前只有三种有效的策略
+ * @brief: Parse whether the persistence strategy in the file is correct, currently there are only three valid strategies
  */
 func checkPersistenceStrategy(strategy string) bool {
 	lower := strings.ToLower(strategy)
@@ -301,7 +301,7 @@ func checkPersistenceStrategy(strategy string) bool {
 }
 
 /*
- * @brief: 解析chubbygomap的map策略
+ * @brief: Parse the map strategy of chubbygomap
  */
 func checkChubbyGoMapStrategy(strategy string) bool {
 	lower := strings.ToLower(strategy)
@@ -314,11 +314,11 @@ func checkChubbyGoMapStrategy(strategy string) bool {
 }
 
 /*
- * @brief: 已经经历过checkjson,只可能有两种情况
+ * @brief: Already checked by checkjson, there are only two possible situations
  */
 func transformChubbyGomap2uint32(strategy string) uint32 {
 	lower := strings.ToLower(strategy)
-	if lower == "syncmap"{
+	if lower == "syncmap" {
 		return BaseServer.SyncMap
 	} else {
 		return BaseServer.ConcurrentMap

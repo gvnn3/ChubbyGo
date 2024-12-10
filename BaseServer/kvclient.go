@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-/* Code comment are all encoded in UTF-8.*/
+/* Code comments are all encoded in UTF-8.*/
 
 package BaseServer
 
@@ -31,11 +31,11 @@ import (
 type Clerk struct {
 	servers []*rpc.Client
 
-	leader int // 记录哪一个是leader
-	// 为了保证操作的一致性
-	seq         int      // 当前的操作数
-	ClientID    uint64   // 记录当前客户端的序号
-	serversIsOk *[]int32 // 用于记录那一个服务器当前可以连接，是一个bool位
+	leader int // Record which one is the leader
+	// To ensure consistency of operations
+	seq         int      // Current operation number
+	ClientID    uint64   // Record the current client ID
+	serversIsOk *[]int32 // Used to record which server is currently connectable, it is a boolean bit
 }
 
 func nrand() int64 {
@@ -45,23 +45,23 @@ func nrand() int64 {
 	return x
 }
 
-// 在创建的时候已经知道了如何与服务端交互
+// When created, it already knows how to interact with the server
 func MakeClerk(servers []*rpc.Client, IsOk *[]int32) *Clerk {
 	ck := new(Clerk)
 	ck.servers = servers
 	ck.serversIsOk = IsOk
 
-	ck.leader = mrand.Intn(len(servers)) // 随机选择一个起始值 生成(0,len(server)-1)的随机数
+	ck.leader = mrand.Intn(len(servers)) // Randomly select a starting value, generate a random number in the range (0, len(server)-1)
 	ck.seq = 1
 	ck.ClientID = Flake.GetSonyflake()
 
-	log.Printf("INFO : Creat a new clerk(%d).\n", ck.ClientID)
+	log.Printf("INFO : Create a new clerk(%d).\n", ck.ClientID)
 
 	return ck
 }
 
 /*
- * @brief: 因为为了保证强一致性，一个客户端一次只会跑一个操作
+ * @brief: To ensure strong consistency, a client will only run one operation at a time
  */
 func (ck *Clerk) Get(key string) string {
 	// log.Printf("INFO : Clerk Get: %s\n", key)
@@ -72,10 +72,10 @@ func (ck *Clerk) Get(key string) string {
 		reply := new(GetReply)
 
 		ck.leader %= serverLength
-		// go中*和[]优先级不一样，要加个括号，挺扯的
+		// In Go, * and [] have different precedence, need to add parentheses, quite tricky
 		if atomic.LoadInt32(&((*ck.serversIsOk)[ck.leader])) == 0 {
 			ck.leader++
-			continue // 不能连接就切换
+			continue // If cannot connect, switch
 		}
 
 		replyArrival := make(chan bool, 1)
@@ -95,13 +95,13 @@ func (ck *Clerk) Get(key string) string {
 					log.Println(ck.ClientID, reply.Err, reply.Value)
 					ck.seq++
 					return reply.Value
-				} else if reply.Err == ReElection || reply.Err == NoLeader { // 这两种情况我们需要重新发送请求 即重新选择主
+				} else if reply.Err == ReElection || reply.Err == NoLeader { // In these two cases, we need to resend the request, i.e., reselect the leader
 					ck.leader++
 				}
 			} else {
 				ck.leader++
 			}
-		case <-time.After(200 * time.Millisecond): // RPC超过200ms以后直接切服务器 一般来说信道没有问题200ms绝对够用
+		case <-time.After(200 * time.Millisecond): // If RPC exceeds 200ms, switch server. Generally, 200ms is definitely enough if there is no issue with the channel
 			ck.leader++
 		}
 	}
@@ -119,7 +119,7 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 		ck.leader %= cnt
 
 		if atomic.LoadInt32(&((*ck.serversIsOk)[ck.leader])) == 0 {
-			ck.leader++ // 不能连接就切换
+			ck.leader++ // If cannot connect, switch
 			continue
 		}
 
@@ -128,13 +128,13 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 			err := ck.servers[ck.leader].Call("RaftKV.PutAppend", args, reply)
 			flag := true
 			if err != nil {
-				log.Printf("ERROR : Putappend call error, Find the cause as soon as possible -> (%s).\n", err.Error())
+				log.Printf("ERROR : PutAppend call error, Find the cause as soon as possible -> (%s).\n", err.Error())
 				flag = false
 			}
 			replyArrival <- flag
 		}()
 		select {
-		case <-time.After(200 * time.Millisecond): // rpc timeout: 200ms
+		case <-time.After(200 * time.Millisecond): // RPC timeout: 200ms
 			ck.leader++
 			continue
 		case ok := <-replyArrival:
