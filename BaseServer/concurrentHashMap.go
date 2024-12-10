@@ -27,7 +27,7 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/xxhash"
+	"github.com/cespare/xxhash/v2"
 )
 
 /*
@@ -323,9 +323,9 @@ func (m ConcurrentHashMap) MarshalJSON() ([]byte, error) {
  * @param: Extremely efficient hash algorithm
  */
 func xxhash_key(key string) uint32 {
-	xxh := xxhash.New32()
+	xxh := xxhash.New()
 	xxh.Write(str2sbyte(key))
-	return xxh.Sum32()
+	return uint32(xxh.Sum64())
 }
 
 /*

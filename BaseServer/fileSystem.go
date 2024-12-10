@@ -192,7 +192,7 @@ func (Fsn *FileSystemNode) Insert(InstanceSeq uint64, Type int, name string, Rea
 	bytesFileName := str2sbyte(name)
 	bytesLength := len(bytesFileName)
 	for i := 0; i < bytesLength; i++ {
-		if bytesFileName[i] == '/' or bytesFileName[i] == ' ' {
+		if bytesFileName[i] == '/' || bytesFileName[i] == ' ' {
 			return 0, 0, ChubbyGoFileSystemError(FileNameError)
 		}
 	}
@@ -292,10 +292,10 @@ func (Fsn *FileSystemNode) Delete(InstanceSeq uint64, filename string, opType in
 }
 
 /*
- * @param: InstanceSeq from the file descriptor; the name of the file to be locked
- * @return: Return the current file's instanceSeq
- * @notes: For a file, the client's open operation can check whether a file exists, if it exists, it will return a handle, otherwise it will return false;
-		For a directory, open can get a handle to create a file;
+  - @param: InstanceSeq from the file descriptor; the name of the file to be locked
+  - @return: Return the current file's instanceSeq
+  - @notes: For a file, the client's open operation can check whether a file exists, if it exists, it will return a handle, otherwise it will return false;
+    For a directory, open can get a handle to create a file;
 */
 func (Fsn *FileSystemNode) Open(name string) (uint64, uint64) {
 	// TODO Some permission checks should be done here, but I haven't thought about how to divide permissions yet

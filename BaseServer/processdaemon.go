@@ -172,7 +172,7 @@ func (kv *RaftKV) acceptFromRaftDaemon() {
 									err := node.Delete(cmd.InstanceSeq, cmd.FileName, cmd.LockOrFileOrDeleteType, cmd.CheckSum)
 									if err == nil {
 										log.Printf("INFO : [%d] Delete file(%s) success.\n", kv.me, cmd.FileName)
-										kv.ClientInstanceSeq[cmd.ClientID] <- NoticeSucess // Special case, we need a notification mechanism
+										kv.ClientInstanceSeq[cmd.ClientID] <- NoticeSuccess // Special case, we need a notification mechanism
 										break
 									} else {
 										log.Printf("INFO : [%d] Delete file(%s) failure, %s.\n", kv.me, cmd.FileName, err.Error())
@@ -227,7 +227,7 @@ func (kv *RaftKV) acceptFromRaftDaemon() {
 									log.Printf("DEBUG : Release token is %d\n", cmd.Token)
 									err := node.Release(cmd.InstanceSeq, cmd.FileName, cmd.Token, cmd.CheckSum)
 									if err == nil {
-										kv.ClientInstanceSeq[cmd.ClientID] <- NoticeSucess // Notification mechanism
+										kv.ClientInstanceSeq[cmd.ClientID] <- NoticeSuccess // Notification mechanism
 										// Only look at the reference count of the read lock, if it was a read lock before, this is correct, if it is a write lock, it is also zero after Release, which is correct; if it is wrong, it will not enter here
 										log.Printf("INFO : [%d] Release file(%s) success, this file reference count is %d\n", kv.me, cmd.FileName, node.readLockReferenceCount)
 										break
@@ -244,7 +244,7 @@ func (kv *RaftKV) acceptFromRaftDaemon() {
 								if ok {
 									err := node.CheckToken(cmd.Token, cmd.FileName)
 									if err == nil {
-										kv.ClientInstanceSeq[cmd.ClientID] <- NoticeSucess // Notification mechanism
+										kv.ClientInstanceSeq[cmd.ClientID] <- NoticeSuccess // Notification mechanism
 										// Only look at the reference count of the read lock, if it was a read lock before, this is correct, if it is a write lock, it is also zero after Release, which is correct; if it is wrong, it will not enter here
 										log.Printf("INFO : [%d] CheckToken file(%s) success, this file reference count is %d\n", kv.me, cmd.FileName, node.readLockReferenceCount)
 										break
@@ -275,10 +275,10 @@ func (kv *RaftKV) acceptFromRaftDaemon() {
 								} else if cmd.Interval != 0 {
 									nowValue, flag := strconv.Atoi(value)
 									if flag == nil { // Conversion succeeded
-										if cmd.boundary <= nowValue-cmd.Interval {
+										if cmd.Boundary <= nowValue-cmd.Interval {
 											kv.KvDictionary.ChubbyGoMapSet(cmd.Key, strconv.Itoa(nowValue-cmd.Interval))
 											kv.CASNotice[cmd.ClientID] <- true
-										} else if cmd.boundary >= nowValue+cmd.Interval {
+										} else if cmd.Boundary >= nowValue+cmd.Interval {
 											kv.KvDictionary.ChubbyGoMapSet(cmd.Key, strconv.Itoa(nowValue+cmd.Interval))
 											kv.CASNotice[cmd.ClientID] <- true
 										} else {

@@ -84,7 +84,7 @@ func (kv *RaftKV) CompareAndSwap(args *CompareAndSwapArgs, reply *CompareAndSwap
 		}
 		NewOperation.Old = strconv.Itoa(NowValue)
 		NewOperation.New = strconv.Itoa(NowValue + args.New)
-		NewOperation.boundary = rhs
+		NewOperation.Boundary = rhs
 	} else if args.Flag&4 != 0 { // SUB
 		lhs := args.Old
 		if NowValue-args.New < lhs {
@@ -93,7 +93,7 @@ func (kv *RaftKV) CompareAndSwap(args *CompareAndSwapArgs, reply *CompareAndSwap
 		}
 		NewOperation.Old = strconv.Itoa(NowValue)
 		NewOperation.New = strconv.Itoa(NowValue - args.New)
-		NewOperation.boundary = lhs
+		NewOperation.Boundary = lhs
 	} else { // Undefined behavior
 		log.Printf("ERROR : [%d] CompareAndSwap exhibits undefined behavior.\n", kv.me)
 		reply.Err = CASFlagUndefined
@@ -142,7 +142,7 @@ func (kv *RaftKV) CompareAndSwap(args *CompareAndSwapArgs, reply *CompareAndSwap
 		if flag {
 			reply.Err = OK // The update has been completed in the dictionary according to the received request
 		} else {
-			reply.Err = CASFailture // CAS failed for various reasons
+			reply.Err = CASFailure // CAS failed for various reasons
 		}
 
 	}
@@ -188,7 +188,7 @@ func (ck *Clerk) CompareAndSwap(Key string, Old int, New int, Flag int) bool {
 				ck.seq++
 				return true
 			} else if reply.Err == CurrentValueExceedsExpectedValue || reply.Err == CASFlagUndefined ||
-				reply.Err == ValueCannotBeConvertedToNumber || reply.Err == CASFailture || reply.Err == Duplicate {
+				reply.Err == ValueCannotBeConvertedToNumber || reply.Err == CASFailure || reply.Err == Duplicate {
 				// The other end CAS failed, the error type is the return value
 				// log.Printf("INFO : CAS error key(%s) old(%d) new(%d) -> [%s]\n", Key, Old, New, reply.Err)
 				ck.seq++

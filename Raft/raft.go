@@ -196,6 +196,7 @@ func (rf *Raft) fillRequestVoteArgs(args *RequestVoteArgs) {
  */
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) error {
 	// Rest of the implementation remains the same...
+	return nil
 }
 
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
@@ -476,7 +477,7 @@ func (rf *Raft) consistencyCheckReplyHandler(n int, reply *AppendEntriesReply) {
 					// Should use WARNING like peer for better debugging
 					log.Printf("WARNING : [%d] have entry %d , the last entry in term %d.\n",
 						rf.me, lastIndex, reply.ConflictTerm)
-					break
+					return
 				}
 			}
 			if know {
@@ -697,7 +698,7 @@ func (rf *Raft) electionDaemon() {
 			return
 		case <-rf.resetTimer: // Reset timeout clock
 			if !rf.electionTimer.Stop() {
-				log.Printf("ERROR : [%d] Failure to Stop the resetTimer that will result in re-election in the leader service .\n")
+				log.Printf("ERROR : [%d] Failure to Stop the resetTimer that will result in re-election in the leader service .\n", rf.me)
 				<-rf.electionTimer.C
 			}
 			rf.electionTimer.Reset(rf.electionTimeout)
@@ -710,6 +711,22 @@ func (rf *Raft) electionDaemon() {
 
 			go rf.canvassVotes()
 		}
+	}
+}
+
+func (rf *Raft) tryToReconnect(server int) {
+	// Implementation of reconnection logic
+	// Example: retry connection logic with exponential backoff
+	for {
+		time.Sleep(time.Second) // Example: wait for 1 second before retrying
+		client, err := rpc.Dial("tcp", (*rf.serversAddress)[server])
+		if err == nil {
+			rf.peers[server] = client
+			atomic.StoreInt32(&rf.peersIsConnect[server], 0)
+			log.Printf("INFO : Successfully reconnected to peer %d\n", server)
+			return
+		}
+		log.Printf("WARNING : Failed to reconnect to peer %d, retrying...\n", server)
 	}
 }
 
@@ -861,10 +878,6 @@ func (rf *Raft) sendInstallSnapshot(server int, args *InstallSnapshotArgs, reply
 
 			res = false
 		} else if !reply.IsOk {
-			// Normal situation before server cluster fully started
-			log.Println("INFO : The server is not connected to other servers in the cluster.")
-			res
-
 			// Normal situation before server cluster fully started
 			log.Println("INFO : The server is not connected to other servers in the cluster.")
 			res = false
