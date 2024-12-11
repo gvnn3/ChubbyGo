@@ -28,11 +28,12 @@ import (
 var Server_file_locker sync.Mutex // config file locker
 
 func init() {
+	log.Printf("Registering server config loader\n")
 	Connect.RegisterRestServerListener(LoadServerConfig)
 }
 
 func LoadServerConfig(filename string, cfg *Connect.ServerConfig) bool {
-
+	log.Printf("Loading server config from %s\n", filename)
 	Server_file_locker.Lock()
 	data, err := os.ReadFile(filename) // read config file
 	Server_file_locker.Unlock()

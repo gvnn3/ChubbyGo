@@ -35,12 +35,13 @@ import (
 // TODO Later, it can be changed to something like Redis, where the existence of other nodes is obtained through message interaction
 
 type ServerConfig struct {
-	peers     []*rpc.Client        // Represents the connection handles of several other servers
-	me        uint64               // Later changed to a globally unique ID
-	nservers  int                  // Indicates how many servers there are in total
-	kvserver  *BaseServer.RaftKV   // A raftkv entity
-	persister *Persister.Persister // Persistence entity
-	mu        sync.Mutex           // Used to protect the variables of this structure
+	ConfigPath string               // The path to the configuration file
+	peers      []*rpc.Client        // Represents the connection handles of several other servers
+	me         uint64               // Later changed to a globally unique ID
+	nservers   int                  // Indicates how many servers there are in total
+	kvserver   *BaseServer.RaftKV   // A raftkv entity
+	persister  *Persister.Persister // Persistence entity
+	mu         sync.Mutex           // Used to protect the variables of this structure
 	// If not set to uppercase, it cannot be read from the configuration file
 	MaxRaftState   int      `json:"maxraftstate"`    // Raft layer log compression limit
 	Maxreries      int      `json:"maxreries"`       // Maximum number of timeout retries
@@ -251,7 +252,7 @@ func (cfg *ServerConfig) StartServer() error {
 	var flag bool = false
 	if len(ServerListeners) == 1 {
 		// Correctly read the configuration file; note here, checkJsonParser checks the range and format of the string, and the parsing process will parse out errors between int and string
-		flag = ServerListeners[0]("Config/server_config.json", cfg)
+		flag = ServerListeners[0](cfg.ConfigPath, cfg)
 		if !flag { // File open failed
 			log.Printf("Open config File Error!")
 			return ErrorInStartServer(parser_error)
@@ -290,15 +291,16 @@ func (cfg *ServerConfig) StartServer() error {
  * @brief: Return a Config structure to start a service
  * @param: nservers The number of machines required for this cluster, including itself, and each server must be configured correctly when initialized
  */
-func CreatServer(nservers int) *ServerConfig {
+func CreatServer(nservers int, ConfigPath string) *ServerConfig {
 	cfg := &ServerConfig{}
 
+	cfg.ConfigPath = ConfigPath
 	cfg.nservers = nservers
 	cfg.MaxRaftState = 0
 	cfg.peers = make([]*rpc.Client, cfg.nservers-1) // Stores the RPC encapsulation of other servers except itself
 	cfg.me = Flake.GetSonyflake()                   // The global ID needs to be passed to the raft layer
 	cfg.persister = Persister.MakePersister()
-
+	log.Printf("INFO : [%d] ServerConfig has been successfully created.\n", cfg.me)
 	return cfg
 }
 
@@ -311,6 +313,7 @@ type ServerListener func(filename string, cfg *ServerConfig) bool
 var ServerListeners []ServerListener
 
 func RegisterRestServerListener(l ServerListener) {
+	log.Printf("INFO : Registering ServerListener\n")
 	ServerListeners = append(ServerListeners, l)
 }
 
