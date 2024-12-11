@@ -10,19 +10,19 @@ import (
 )
 
 /*
- * @brief: 这个文件是为了对BaseMap, sync.map, concurrentMap, 以及ChubbyGoMap的两种类型
- * 的Put,Get,并发插入读取混合,删除四种操作分别做性能比较, 为客户提供不同场景下最佳的选择.
+ * @brief: This file is for performance comparison of Put, Get, concurrent insert and read mix, and delete operations
+ * of BaseMap, sync.map, concurrentMap, and two types of ChubbyGoMap, providing the best choice for customers in different scenarios.
  */
 
 /*
- * 循环次数;每次执行平均花费时间;每次执行堆上分配内存总数;每次执行堆上分配内存次数;
+ * Loop count; average time spent per execution; total heap memory allocated per execution; number of heap allocations per execution;
  */
 
 const ThreadNumber = 10
 
-/*1.--------------测试Put操作--------------*/
+/*1.--------------Test Put operation--------------*/
 
-// 在此测试中冲突键较多,对并发的map并不有利
+// In this test, there are many conflicting keys, which is not beneficial for concurrent maps
 
 // (BaseMap)
 func BenchmarkPutKeyNoExist_BaseMap(b *testing.B) {
@@ -124,8 +124,8 @@ func BenchmarkPutKeyNoExist_ChubbyGo_SyncMap(b *testing.B) {
 	groups.Wait()
 }
 
-/*2.--------------测试Get操作--------------*/
-// 读取一个存在的key
+/*2.--------------Test Get operation--------------*/
+// Read an existing key
 
 // (BaseMap)
 func BenchmarkGetKey_BaseMap(b *testing.B) {
@@ -135,7 +135,7 @@ func BenchmarkGetKey_BaseMap(b *testing.B) {
 	groups.Add(ThreadNumber)
 
 	rand.Seed(time.Now().Unix())
-	// 可能产生(64,128)个键
+	// May generate (64,128) keys
 	KeyNumber := rand.Intn(63)
 	KeyNumber += 64
 	for i := 0; i < KeyNumber; i++ {
@@ -165,7 +165,7 @@ func BenchmarkGetKey_ConcurrentMap(b *testing.B) {
 	groups.Add(ThreadNumber)
 
 	rand.Seed(time.Now().Unix())
-	// 可能产生(64,128)个键
+	// May generate (64,128) keys
 	KeyNumber := rand.Intn(63)
 	KeyNumber += 64
 	for i := 0; i < KeyNumber; i++ {
@@ -195,7 +195,7 @@ func BenchmarkGetKey_SyncMap(b *testing.B) {
 	groups.Add(ThreadNumber)
 
 	rand.Seed(time.Now().Unix())
-	// 可能产生(64,128)个键
+	// May generate (64,128) keys
 	KeyNumber := rand.Intn(63)
 	KeyNumber += 64
 	for i := 0; i < KeyNumber; i++ {
@@ -225,7 +225,7 @@ func BenchmarkGetKey_ChubbyGo_ConcurrentMap(b *testing.B) {
 	groups.Add(ThreadNumber)
 
 	rand.Seed(time.Now().Unix())
-	// 可能产生(64,128)个键
+	// May generate (64,128) keys
 	KeyNumber := rand.Intn(63)
 	KeyNumber += 64
 	for i := 0; i < KeyNumber; i++ {
@@ -254,7 +254,7 @@ func BenchmarkGetKey_ChubbyGo_SyncMap(b *testing.B) {
 	groups := sync.WaitGroup{}
 	groups.Add(ThreadNumber)
 	rand.Seed(time.Now().Unix())
-	// 可能产生(64,128)个键
+	// May generate (64,128) keys
 	KeyNumber := rand.Intn(63)
 	KeyNumber += 64
 	for i := 0; i < KeyNumber; i++ {
@@ -276,7 +276,7 @@ func BenchmarkGetKey_ChubbyGo_SyncMap(b *testing.B) {
 	groups.Wait()
 }
 
-/*3.--------------测试并发Get,put操作--------------*/
+/*3.--------------Test concurrent Get and Put operations--------------*/
 
 // (BaseMap)
 func BenchmarkPutGet_BaseMap(b *testing.B) {
@@ -383,7 +383,7 @@ func BenchmarkPutGet_ChubbyGo_SyncMap(b *testing.B) {
 	groups.Wait()
 }
 
-/*3.--------------测试并发Delete操作--------------*/
+/*3.--------------Test concurrent Delete operations--------------*/
 
 func BenchmarkDelete_BaseMap(b *testing.B) {
 	Map := BaseServer.NewBaseMap()
