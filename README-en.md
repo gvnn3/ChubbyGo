@@ -38,13 +38,6 @@ Due to my limited energy and skills, I am temporarily unable to implement all th
 3. **Problems that need to be modified and unimplemented functions that have been discovered**;
 4. **Valid behaviors defined in the ChubbyGo file system**;
 
-## 3. Implementation
-Due to my limited energy and skills, I am temporarily unable to implement all the details in the paper, and some places have chosen different strategies from the paper for a simpler and more straightforward implementation. This section is divided into four parts:
-1. **Differences from the current design of Chubby**;
-2. **Work that has been completed so far**;
-3. **Problems that need to be modified and unimplemented functions that have been discovered**;
-4. **Valid behaviors defined in the ChubbyGo file system**;
-
 ### 3.1 Design Differences
 1. Chubby uses the Paxos protocol, while ChubbyGo uses the Raft protocol.
 2. Chubby uses a hierarchical namespace, while ChubbyGo uses a flat namespace.
