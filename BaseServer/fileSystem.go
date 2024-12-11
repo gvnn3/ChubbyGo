@@ -292,6 +292,97 @@ func (Fsn *FileSystemNode) Delete(InstanceSeq uint64, filename string, opType in
 }
 
 /*
+ * @param: InstanceSeq from the file descriptor; the name of the file to be locked
+ * @return: Return the current file's instanceSeq
+ * @notes: Need to check if the name exists; the caller should first check the bool and then the seq
+ */
+func (Fsn *FileSystemNode) Acquire(InstanceSeq uint64, filename string, locktype int, checksum uint64) (uint64, error) {
+	Node, IsExist := Fsn.next[filename]
+
+	if !IsExist {
+		log.Printf("INFO : %s/%s does not exist.\n", Fsn.nowPath, filename)
+		return 0, ChubbyGoFileSystemError(PathError)
+	}
+
+	if checksum != Node.checksum {
+		log.Printf("WARNING : A dangerous requirement, unmatched checksum, now(%d) -> client(%d).\n", checksum, Node.checksum)
+		return 0, ChubbyGoFileSystemError(CheckSumError)
+	}
+
+	if InstanceSeq < Node.instanceSeq {
+		log.Println("WARNING : Acquire -> Request from a backward file descriptor!")
+		return 0, ChubbyGoFileSystemError(InstanceSeqError)
+	}
+
+	if Node.nowLockType == NotLock {
+		if locktype == ReadLock {
+			Node.readLockReferenceCount++
+		}
+		Node.nowLockType = locktype
+	} else if Node.nowLockType == ReadLock && locktype == ReadLock {
+		Node.readLockReferenceCount++
+		return Node.tokenSeq, nil
+	} else if Node.nowLockType == WriteLock { // Separate writing for clarity of all situations
+		return 0, ChubbyGoFileSystemError(LockTypeError)
+	} else { // now readLock, args writelock
+		return 0, ChubbyGoFileSystemError(LockTypeError)
+	}
+
+	return Node.tokenSeq, nil // Directly return the current value, just add 1 in release
+}
+
+/*
+ * @param: InstanceSeq from the file descriptor; the name of the file (lock) to be released
+ * @return: Return true if released successfully, otherwise return false
+ * @notes: Need to check if the name exists
+ */
+func (Fsn *FileSystemNode) Release(InstanceSeq uint64, filename string, Token uint64, checksum uint64) error {
+	Node, IsExist := Fsn.next[filename]
+
+	if !IsExist {
+		log.Printf("INFO : %s/%s does not exist.\n", Fsn.nowPath, filename)
+		return ChubbyGoFileSystemError(PathError)
+	}
+
+	if checksum != Node.checksum {
+		log.Printf("WARNING : A dangerous requirement, unmatched checksum, now(%d) -> client(%d).\n", checksum, Node.checksum)
+		return ChubbyGoFileSystemError(CheckSumError)
+	}
+
+	// Prevent lagging lock holders from releasing the lock held by other nodes
+	if Token < Node.tokenSeq {
+		log.Printf("WARNING : A lagging client wants to release file(%s) now(%d) node.clientSeq(%d).\n", Node.nowPath, Token, Node.tokenSeq)
+		return ChubbyGoFileSystemError(TokenSeqError)
+	}
+
+	if InstanceSeq < Node.instanceSeq {
+		log.Println("WARNING : Release -> Request from a backward file descriptor!")
+		return ChubbyGoFileSystemError(InstanceSeqError)
+	}
+
+	if Node.nowLockType == NotLock {
+		log.Println("WARNING : Error operation, release before acquire.")
+		return ChubbyGoFileSystemError(ReleaseBeforeAcquire)
+	} else if Node.nowLockType == ReadLock { // TODO But obviously this approach may cause write operations to starve
+		if Node.readLockReferenceCount >= 1 {
+			Node.readLockReferenceCount--
+		} else { // Obviously this situation cannot occur
+			log.Println("ERROR : Release -> Impossible situation.")
+		}
+	}
+
+	if Node.readLockReferenceCount > 0 {
+		return nil
+	}
+
+	// The current lock type is write lock or read lock reference count is 0, obviously the token will be incremented only after all read locks are released
+	Node.tokenSeq++
+	Node.nowLockType = NotLock
+
+	return nil
+}
+
+/*
   - @param: InstanceSeq from the file descriptor; the name of the file to be locked
   - @return: Return the current file's instanceSeq
   - @notes: For a file, the client's open operation can check whether a file exists, if it exists, it will return a handle, otherwise it will return false;
