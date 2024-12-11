@@ -57,36 +57,24 @@ func (err ChubbyGoFileSystemError) Error() string {
 	switch err {
 	case PathError:
 		ans = "Filename and directory have the same name."
-		break
 	case CheckSumError:
 		ans = "Client sent an incorrect CheckSum."
-		break
 	case InstanceSeqError:
 		ans = "Client sent an incorrect InstanceSeq."
-		break
 	case DoesNotSupportRecursiveDeletion:
 		ans = "Does not support recursive deletion, there are still files in this directory."
-		break
 	case CannotDeleteFilesWithZeroReferenceCount:
 		ans = "Deleting a file with a reference count of zero."
-		break
 	case LockTypeError:
 		ans = "Lock type error."
-		break
 	case ReleaseBeforeAcquire:
 		ans = "The lock being released has not been locked."
-		break
 	case OnlyDirectoriesCanCreateFiles:
 		ans = "Only directories can create files."
-		break
 	case TokenSeqError:
 		ans = "Client sent an incorrect TokenSeq."
-		break
 	case FileNameError:
 		ans = "The inserted file has disallowed characters."
-		break
-	default:
-
 	}
 	return ans
 }

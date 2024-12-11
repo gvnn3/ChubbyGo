@@ -69,7 +69,6 @@ func (ck *Clerk) FastGet(key string) string {
 			ck.leader++
 		}
 	}
-	return ""
 }
 
 func (kv *RaftKV) FastGet(args *GetArgs, reply *GetReply) error {

@@ -136,7 +136,7 @@ func (kv *RaftKV) acceptFromRaftDaemon() {
 								if ok { // This is the path name; when the path of Open exists, open it and return InstanceSeq
 									seq, chuckSum := node.Open(cmd.PathName) // Return the InstanceSeq of this file
 									node.OpenReferenceCount++
-									log.Printf("INFO : [%d] Open file(%s) success, instanceSeq is %d, checksum is %s.\n", kv.me, cmd.PathName, seq, chuckSum)
+									log.Printf("INFO : [%d] Open file(%s) success, instanceSeq is %d, checksum is %d.\n", kv.me, cmd.PathName, seq, chuckSum)
 									kv.ClientInstanceSeq[cmd.ClientID] <- seq
 									kv.ClientInstanceCheckSum[cmd.ClientID] <- chuckSum
 								} else {
@@ -338,9 +338,5 @@ func (kv *RaftKV) isUpperThanMaxraftstate() bool {
 	// The above two are extreme cases, we need to consider persisting snapshots when approaching the critical value, tentatively 15%
 	var interval = kv.maxraftstate - NowRaftStateSize
 
-	if interval < kv.maxraftstate/20*3 {
-		return true
-	}
-
-	return false
+	return interval < kv.maxraftstate/20*3
 }

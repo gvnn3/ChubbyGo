@@ -19,9 +19,7 @@ package BaseServer
 
 import (
 	"ChubbyGo/Flake"
-	"crypto/rand"
 	"log"
-	"math/big"
 	mrand "math/rand"
 	"net/rpc"
 	"sync/atomic"
@@ -36,13 +34,6 @@ type Clerk struct {
 	seq         int      // Current operation number
 	ClientID    uint64   // Record the current client ID
 	serversIsOk *[]int32 // Used to record which server is currently connectable, it is a boolean bit
-}
-
-func nrand() int64 {
-	max := big.NewInt(int64(1) << 62)
-	bigx, _ := rand.Int(rand.Reader, max)
-	x := bigx.Int64()
-	return x
 }
 
 // When created, it already knows how to interact with the server
@@ -105,7 +96,6 @@ func (ck *Clerk) Get(key string) string {
 			ck.leader++
 		}
 	}
-	return ""
 }
 
 func (ck *Clerk) PutAppend(key string, value string, op string) {

@@ -129,22 +129,19 @@ func (kv *RaftKV) CompareAndSwap(args *CompareAndSwapArgs, reply *CompareAndSwap
 
 	reply.Err = OK
 
-	select {
-	case <-Notice:
-		curTerm, isLeader := kv.rf.GetState()
-		if !isLeader || term != curTerm {
-			reply.Err = ReElection
-			return nil
-		}
+	<-Notice
+	curTerm, isLeader := kv.rf.GetState()
+	if !isLeader || term != curTerm {
+		reply.Err = ReElection
+		return nil
+	}
 
-		flag := <-kv.CASNotice[args.ClientID]
+	flag := <-kv.CASNotice[args.ClientID]
 
-		if flag {
-			reply.Err = OK // The update has been completed in the dictionary according to the received request
-		} else {
-			reply.Err = CASFailure // CAS failed for various reasons
-		}
-
+	if flag {
+		reply.Err = OK // The update has been completed in the dictionary according to the received request
+	} else {
+		reply.Err = CASFailure // CAS failed for various reasons
 	}
 
 	return nil

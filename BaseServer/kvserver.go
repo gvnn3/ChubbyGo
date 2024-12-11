@@ -33,11 +33,6 @@ type LatestReply struct {
 	Value string // The reason why get does not directly fetch from db is that the latest value at the time of fetching may not be the latest value at the time of reading. We need a strictly ordered sequence of operations.
 }
 
-type fileSystemNoticeTableEntry struct {
-	instacne uint64
-	checksum uint64
-}
-
 type RaftKV struct {
 	mu      sync.Mutex
 	me      uint64
