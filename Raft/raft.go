@@ -195,7 +195,55 @@ func (rf *Raft) fillRequestVoteArgs(args *RequestVoteArgs) {
  * 4. Compare Term of last log entry (LastLogTerm), if same compare index (LastLogIndex), if current node is newer then don't vote, otherwise vote
  */
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) error {
-	// Rest of the implementation remains the same...
+	if atomic.LoadInt32(rf.ConnectIsok) == 0 {
+		reply.IsOk = false
+		return nil
+	}
+
+	reply.IsOk = true
+
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	// Get the latest log information when receiving this message
+	lastLogIdx, lastLogTerm := rf.lastLogIndexAndTerm()
+
+	if args.Term < rf.CurrentTerm {
+		reply.CurrentTerm = rf.CurrentTerm
+		reply.VoteGranted = false
+	} else {
+		if args.Term > rf.CurrentTerm {
+			// This log helped me find a bug, which is if the election is not restricted,
+			// a node in a partition may have a rapidly increasing term, but cannot become leader due to insufficient logs.
+			// This will cause the current leader to be constantly replaced because that node's term is very high,
+			// and it will enter this statement without getting votes.
+			log.Printf("INFO : [%d] turn to follower, CurrentTerm(%d), peer %d Term(%d).\n",
+				rf.me, rf.CurrentTerm, args.CandidateID, args.Term)
+			// Enter new term and cast the vote
+			rf.CurrentTerm = args.Term
+			rf.state = Follower
+			rf.VotedFor = 0
+		}
+
+		if rf.VotedFor == 0 {
+			// Compare logs of both sides, only vote in this case: not voted yet, and the requester's latest log term is higher than own log term
+			if (args.LastLogTerm == lastLogTerm && args.LastLogIndex >= lastLogIdx) ||
+				args.LastLogTerm > lastLogTerm { // Requester's log is newer than own log
+
+				rf.resetTimer <- struct{}{} // Reset election timeout
+
+				rf.state = Follower
+				rf.VotedFor = args.CandidateID
+				reply.VoteGranted = true
+
+				log.Printf("INFO : [%d]: peer %d vote to peer %d (last log idx: %d->%d, term: %d->%d)\n",
+					rf.me, rf.me, args.CandidateID, args.LastLogIndex, lastLogIdx, args.LastLogTerm, lastLogTerm)
+
+				log.Printf("INFO : [%d] become new follower!\n", rf.me)
+			}
+		}
+	}
+	rf.persist()
 	return nil
 }
 
