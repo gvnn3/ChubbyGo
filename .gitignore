@@ -1,0 +1,62 @@
+# Go specific
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+
+# Go build and test cache
+/vendor/
+/Godeps/
+.glide/
+.idea/
+*.test
+/build/
+/dist/
+/bin/
+
+# ChubbyGo specific
+/Persister/*.hdb
+/Config/*.json
+!/Config/server_config.json.example
+!/Config/client_config.json.example
+
+# Binaries and logs
+*.log
+*.db
+*.hdb
+debug
+
+# Mac specific
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# VS Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# Test coverage
+coverage.txt
+coverage.html
+
+# Temp files
+*.tmp
+*~
+*.swp
+*.swo
+
+# Environment variables
+.env
+.env.local
+
+# Exectuables
+server_base
