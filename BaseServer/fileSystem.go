@@ -397,7 +397,7 @@ func InitRoot() *FileSystemNode {
 	// Because the ideal calling method is to have a DNS server, the client can use the name to get the address of this Cell
 	// At this time, it is much more convenient to name it directly, TODO here still need to read a configuration file later
 	//root.fileName = "ChubbyCell_" + strconv.Itoa(int(leaderID))
-	root.fileName = "ChubbyCell_" + "lizhaolong"
+	root.fileName = "ChubbyCell_" + "Conductor"
 
 	// The initial value of instanceseq and tokenseq is 2, with zero as the invalid value and 1 as the delete notification success value
 	root.instanceSeq = 2
